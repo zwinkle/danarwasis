@@ -4,33 +4,97 @@ import DefautLayout from "../../../layouts/Layout.astro";
 
 export const prerender = false;
 
-const tag = Astro.params.slug;
+type NormalizedPost = {
+	entry: CollectionEntry<"blog">;
+	tags: string[];
+	title: string;
+	slug: string;
+	publishedAt: Date | null;
+	idOnly?: boolean;
+};
 
-if (!tag) {
+const normalizeTags = (raw: unknown): string[] => {
+	if (!raw) return [];
+	if (Array.isArray(raw)) {
+		return raw
+			.map((value) => {
+				if (typeof value === "string") return value;
+				if (value && typeof value === "object") {
+					if ("name" in value && typeof (value as { name?: unknown }).name === "string") {
+						return (value as { name: string }).name;
+					}
+					if ("plain_text" in value && typeof (value as { plain_text?: unknown }).plain_text === "string") {
+						return (value as { plain_text: string }).plain_text;
+					}
+					if ("value" in value && typeof (value as { value?: unknown }).value === "string") {
+						return (value as { value: string }).value;
+					}
+				}
+				return null;
+			})
+			.filter((tag): tag is string => Boolean(tag && tag.trim()))
+			.map((tag) => tag.trim());
+	}
+	return [];
+};
+
+const rawTag = Astro.params.slug;
+
+if (!rawTag) {
 	return Astro.rewrite("/404");
 }
 
+const tag = decodeURIComponent(rawTag);
+const normalizedTag = tag.toLowerCase();
+
 const posts = (await getCollection("blog"))
-	.sort((a: CollectionEntry<"blog">, b: CollectionEntry<"blog">) => {
-		const dateA = a.data.properties.created_at.date?.start;
-		const dateB = b.data.properties.created_at.date?.start;
+	.map<NormalizedPost>((entry) => {
+		const notionProps = (entry.data as any)?.properties;
+		const tags = normalizeTags((entry.data as any)?.tags ?? notionProps?.tags ?? []);
 
-		if (dateB && dateA) {
-			return new Date(dateB).getTime() - new Date(dateA).getTime();
-		}
+		const notionDate = notionProps?.created_at?.date?.start;
+		const publishedAt = (() => {
+			if (typeof notionDate === "string") {
+				const parsed = new Date(notionDate);
+				if (!Number.isNaN(parsed.getTime())) {
+					return parsed;
+				}
+			}
+			return entry.data.pubDate ?? null;
+		})();
 
-		return 0;
+		const title =
+			(typeof notionProps?.Name === "string" && notionProps.Name.trim().length > 0
+				? notionProps.Name
+				: entry.data.title) ?? entry.slug.replace(/-/g, " ");
+
+		const notionSlug = notionProps?.slug;
+		const slug =
+			(typeof notionSlug === "string" && notionSlug.trim().length > 0 ? notionSlug : entry.data.slug) ?? entry.slug;
+
+		return {
+			entry,
+			tags,
+			title,
+			slug,
+			publishedAt,
+			idOnly: entry.data.idOnly,
+		};
 	})
-	.filter((p) => p.data.properties.tags && p.data.properties.tags.includes(tag));
+	.filter((post) => post.tags.some((postTag) => postTag.toLowerCase() === normalizedTag))
+	.sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0));
 
-let postsByYear: Record<number, typeof posts> = {};
+const displayTag =
+	posts.find((post) => post.tags.some((postTag) => postTag.toLowerCase() === normalizedTag))?.tags.find(
+		(postTag) => postTag.toLowerCase() === normalizedTag
+	) ?? tag;
 
-for (const post of posts) {
-	const date = post.data.properties.created_at.date?.start;
-	const year = new Date(date || new Date()).getFullYear();
-	if (!postsByYear[year]) postsByYear[year] = [];
-	postsByYear[year].push(post);
-}
+const postsByYear = posts.reduce<Record<number, NormalizedPost[]>>((acc, post) => {
+	const year = (post.publishedAt ?? new Date()).getFullYear();
+	if (!acc[year]) acc[year] = [];
+	acc[year].push(post);
+	return acc;
+}, {});
 ---
 
 <DefautLayout
@@ -38,49 +102,49 @@ for (const post of posts) {
 	description="Sekilas kisah kehidupan saya sebagai Mahasiswa (untuk sekarang ini, besok tidak tahu)">
 	<div class="grid gap-6 mt-32 max-w-3xl mx-auto px-12 mb-20 slide-enter-content">
 		<h1>
-			<span class="text-3xl lg:text-4xl font-bold font-lexend capitalize">{tag}</span>
+			<span class="text-3xl lg:text-4xl font-bold font-lexend capitalize">{displayTag}</span>
 		</h1>
 		<p>
 			Disini {posts.length}
-			{posts.length === 1 ? "postingan" : "postingan"} menggunakan tag "{tag}".
+			{posts.length === 1 ? "postingan" : "postingan"} menggunakan tag "{displayTag}".
 		</p>
 		{
 			Object.entries(postsByYear)
 				.sort(([a], [b]) => parseInt(b) - parseInt(a))
-				.map(([year, posts]: [string, any[]], yearIndex: number) => (
+				.map(([year, yearPosts]: [string, NormalizedPost[]], yearIndex: number) => (
 					<div class=" my-12 relative">
 						<div
 							class=" text-2xl font-bold absolute -z-50 font-lexend text-9xl -top-12 -left-12 opacity-10 text-stroke dark:(text-d-base) text-l-base "
-							style={`--enter-stage: ${yearIndex + posts.length + 2} !important;`}>
+						style={`--enter-stage: ${yearIndex + yearPosts.length + 2} !important;`}>
 							{year}
 						</div>
 						<ul class=" mt-4 z-50 gap-4 grid slide-enter-content">
-							{posts
-								.sort(
-									(a: any, b: any) =>
-										b.data.properties.created_at.date.start.valueOf() - a.data.properties.created_at.date.start.valueOf()
-								)
-								.map((post: any, postIndex: number) => (
+						{yearPosts
+							.slice()
+							.sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0))
+							.map((post, postIndex: number) => (
 									<li
 										class:list={[
 											"mt-2 relative",
-											{
-												"before:(content-['ID'] absolute -left-10 bg-#5551 text-#888 bg-opacity-25 px-2 py-1 text-xs rounded-md) lang-id":
-													post.data.idOnly,
-											},
+										{
+											"before:(content-['ID'] absolute -left-10 bg-#5551 text-#888 bg-opacity-25 px-2 py-1 text-xs rounded-md) lang-id":
+												post.idOnly,
+										},
 										]}
 										style={`--enter-stage: ${yearIndex > 0 ? yearIndex : ""}${postIndex + 2} !important;`}>
 										<a
-											href={`/blog/${post.data.properties.slug}`}
+											href={`/blog/${post.slug}`}
 											class="inline-block duration-200 transition-all transform inline-flex items-end gap-4 opacity-90 hover:opacity-100">
 											<p>
-												{post.data.properties.Name}
-												<span class=" text-xs text-gray-500 inline-block">
-													{new Date(post.data.properties.created_at.date.start).toLocaleDateString("en-US", {
-														day: "2-digit",
-														month: "long",
-													})}
-												</span>
+												{post.title}
+												{post.publishedAt && (
+													<span class=" text-xs text-gray-500 inline-block">
+														{post.publishedAt.toLocaleDateString("en-US", {
+															day: "2-digit",
+															month: "long",
+														})}
+													</span>
+												)}
 											</p>
 										</a>
 									</li>
