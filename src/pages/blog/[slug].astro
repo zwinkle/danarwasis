@@ -1,24 +1,125 @@
 ---
-import { getCollection } from "astro:content";
+import { getCollection, type CollectionEntry } from "astro:content";
 import BlogPost from "../../layouts/BlogPost.astro";
-import { render } from "astro:content";
 import type { MarkdownHeading } from "astro";
 
 export const prerender = false;
 
-const posts = await getCollection("blog");
-const numOfPost = posts.length;
-const params = Astro.params.slug;
-const post = posts.find((post: any) => post.data.properties.slug === params);
+type NormalizedPost = {
+	entry: CollectionEntry<"blog">;
+	slug: string;
+	title: string;
+	tags: string[];
+	publishedAt: Date | null;
+	thumbnail?: string;
+	credit?: string;
+	description?: string;
+	heroImage?: string;
+	idOnly?: boolean;
+};
 
-const postIndex = posts.findIndex((post: any) => post.data.properties.slug === params);
+const extractString = (value: unknown): string | null => {
+	if (typeof value === "string") return value;
+	if (value && typeof value === "object") {
+		if ("plain_text" in value && typeof (value as { plain_text?: unknown }).plain_text === "string") {
+			return (value as { plain_text: string }).plain_text;
+		}
+		if ("value" in value && typeof (value as { value?: unknown }).value === "string") {
+			return (value as { value: string }).value;
+		}
+		if ("name" in value && typeof (value as { name?: unknown }).name === "string") {
+			return (value as { name: string }).name;
+		}
+	}
+	return null;
+};
 
-function getAtIndex(index: number) {
-	return {
-		title: posts[index].data.properties.Name,
-		slug: posts[index].data.properties.slug,
-	};
+const normalizeTags = (raw: unknown): string[] => {
+	if (!raw) return [];
+	if (Array.isArray(raw)) {
+		return raw
+			.map((value) => {
+				if (typeof value === "string") return value;
+				if (value && typeof value === "object") {
+					if ("name" in value && typeof (value as { name?: unknown }).name === "string") {
+						return (value as { name: string }).name;
+					}
+					if ("plain_text" in value && typeof (value as { plain_text?: unknown }).plain_text === "string") {
+						return (value as { plain_text: string }).plain_text;
+					}
+					if ("value" in value && typeof (value as { value?: unknown }).value === "string") {
+						return (value as { value: string }).value;
+					}
+				}
+				return null;
+			})
+			.filter((tag): tag is string => Boolean(tag && tag.trim()))
+			.map((tag) => tag.trim());
+	}
+	return [];
+};
+
+const getPublishedDate = (entry: CollectionEntry<"blog">, notionDate: unknown): Date | null => {
+	if (typeof notionDate === "string") {
+		const parsed = new Date(notionDate);
+		if (!Number.isNaN(parsed.getTime())) return parsed;
+	}
+	const frontmatterDate = entry.data.pubDate;
+	if (frontmatterDate instanceof Date) return frontmatterDate;
+	if (typeof frontmatterDate === "string") {
+		const parsed = new Date(frontmatterDate);
+		if (!Number.isNaN(parsed.getTime())) return parsed;
+	}
+	return null;
+};
+
+const rawPosts = await getCollection("blog");
+
+const normalizedPosts = rawPosts
+	.map<NormalizedPost>((entry) => {
+		const notionProps = (entry.data as any)?.properties ?? {};
+		const slug =
+			extractString(notionProps?.slug) ?? (typeof entry.data.slug === "string" ? entry.data.slug : entry.slug);
+		const title =
+			extractString(notionProps?.Name) ?? (typeof entry.data.title === "string" ? entry.data.title : entry.slug.replace(/-/g, " "));
+		const tags = normalizeTags(notionProps?.tags ?? (entry.data as any)?.tags);
+		const publishedAt = getPublishedDate(entry, notionProps?.created_at?.date?.start);
+		const thumbnail = extractString(notionProps?.thumbnail) ?? entry.data.heroImage;
+		const credit = extractString(notionProps?.credit) ?? (entry.data as any)?.credit;
+		const description = extractString(notionProps?.description) ?? entry.data.description;
+
+		return {
+			entry,
+			slug,
+			title,
+			tags,
+			publishedAt,
+			thumbnail,
+			credit,
+			description,
+			heroImage: entry.data.heroImage,
+			idOnly: entry.data.idOnly,
+		};
+	})
+	.filter((post) => !post.entry.data.draft)
+	.sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0));
+
+const numOfPost = normalizedPosts.length;
+const rawSlug = Astro.params.slug;
+
+if (!rawSlug) {
+	return Astro.rewrite("/404");
 }
+
+const slug = decodeURIComponent(rawSlug);
+const postIndex = normalizedPosts.findIndex((post) => post.slug === slug);
+
+if (postIndex === -1) {
+	return Astro.rewrite("/404");
+}
+
+const targetPost = normalizedPosts[postIndex];
+const { Content, headings } = await targetPost.entry.render();
 
 function getExcerpt(html: string, sentences = 1): string {
 	if (!html) return "";
@@ -33,32 +134,31 @@ function getExcerpt(html: string, sentences = 1): string {
 	return excerpt.trim();
 }
 
-if (!post || !post.rendered) {
-	return Astro.rewrite("/404");
-}
+const rawBody = (targetPost.entry as any)?.body ?? "";
+const derivedDescription = targetPost.description ?? getExcerpt(rawBody, 1);
 
 const pageData = {
 	post: {
-		html: post.rendered.html,
-		thumbnail: post.data.properties.thumbnail,
-		title: post.data.properties.Name,
-		slug: post.data.properties.slug,
-		description: getExcerpt(post.rendered.html, 1),
-		pubDate: new Date(post.data.properties.created_at.date?.start || new Date()),
-		headings: post.rendered.metadata?.headings,
-		credit: post.data.properties.credit,
-		tags: post.data.properties.tags,
+		html: rawBody,
+		thumbnail: targetPost.thumbnail ?? targetPost.heroImage ?? "",
+		title: targetPost.title,
+		slug: targetPost.slug,
+		description: derivedDescription,
+		pubDate: targetPost.publishedAt ?? new Date(),
+		headings,
+		credit: targetPost.credit,
+		tags: targetPost.tags,
 	},
 	numOfPost,
-	params,
+	params: slug,
 	postIndex,
 };
-const prevPost = getAtIndex(postIndex);
-const nextPost = getAtIndex(postIndex);
-// const prevPost = postIndex > 0 ? getAtIndex(postIndex - 1) : null;
-// const nextPost = postIndex < numOfPost - 1 ? getAtIndex(postIndex + 1) : null;
 
-const { Content } = await render(post);
+const prevNormalized = postIndex > 0 ? normalizedPosts[postIndex - 1] : null;
+const nextNormalized = postIndex < numOfPost - 1 ? normalizedPosts[postIndex + 1] : null;
+
+const prevPost = prevNormalized ? { title: prevNormalized.title, slug: prevNormalized.slug } : null;
+const nextPost = nextNormalized ? { title: nextNormalized.title, slug: nextNormalized.slug } : null;
 ---
 
 <BlogPost
@@ -75,7 +175,7 @@ const { Content } = await render(post);
 			<p>Tags:</p>
 			<div class="flex gap-2 flex-wrap">
 				{
-					pageData.post.tags.map((tag) => (
+					pageData.post.tags.map((tag: string) => (
 						<a href={`/blog/tags/${tag}`} class="btn-normal decoration-none font-normal px-4">
 							<span>{tag}</span>
 						</a>
