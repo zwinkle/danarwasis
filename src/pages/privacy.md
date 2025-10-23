@@ -1,31 +1,25 @@
 ---
 layout: '../layouts/PlainMarkdown.astro'
 title: 'Privacy Policy'
-updatedDate: "Aug 23 2024"
+updatedDate: "Oct 23 2025"
 ---
 
 # Privacy Policy
-Last Updated August 23, 2024
+Pembaruan Terakhir 23 Oktober 2025
 
-This page outlines the privacy practices of our website.
+Halaman ini menjelaskan kebijakan privasi situs web kami.
 
-- **Website Technology**: This website is built using [Astro](https://astro.build), a [Static Site Generator (SSG)](https://en.wikipedia.org/wiki/Static_site_generator). This website does not use cookies. We utilize `localStorage`[^1] solely for managing light and dark themes on the client side, with no server interaction. As such, there are no forms or mechanisms that handle personal data.
+- **Teknologi Situs Web**: Situs web ini dibangun menggunakan [Astro](https://astro.build), sebuah [Static Site Generator (SSG)](https://en.wikipedia.org/wiki/Static_site_generator). Situs web ini tidak menggunakan cookie. Kami menggunakan `localStorage`[^1] secara eksklusif untuk mengelola tema terang dan gelap di sisi klien, tanpa interaksi server. Oleh karena itu, tidak ada formulir atau mekanisme yang menangani data pribadi.
 
-- **Hosting**: Our website is hosted by Vercel. Vercel may collect user personal information, including IP address logs, for legal compliance and to maintain the security and integrity of the website and services. For more information, please refer to [Vercel's Privacy Statement](https://vercel.com/legal/privacy-policy).
+- **Hosting**: Situs web kami dihosting oleh Render. Render dapat mengumpulkan informasi pribadi pengguna, termasuk log alamat IP, untuk kepatuhan hukum dan untuk menjaga keamanan dan integritas situs web dan layanan. Untuk informasi lebih lanjut, silakan merujuk ke [Pernyataan Privasi Render](https://render.com/privacy).
 
-- **DNS Services**: We use Cloudflare for DNS server[^2]. For details on how Cloudflare handles data, please review their [Privacy Policy](https://www.cloudflare.com/privacypolicy/).
+- **Tautan Eksternal**: Semua tautan eksternal dibuka di tab baru dan dikonfigurasi agar tidak mengirimkan informasi referrer di header. Kami tidak menggunakan layanan anonimisasi, jadi Anda akan tahu persis ke mana setiap tautan akan membawa Anda. Selain itu, kami menggunakan atribut `noopener` untuk mencegah halaman baru mengakses halaman asli. Jika ada tautan eksternal yang tidak memiliki atribut `rel=“external nofollow noopener noreferrer”`[^2], [beritahu kami](mailto:danarwasis@gmail.com) dan kami akan memperbaruinya segera.
 
-- **External Links**: All external links open in a new tab and are configured not to send referrer information in the header. We do not use anonymizing services, so you will know exactly where each link will take you. Additionally, we use the `noopener` attribute to prevent the new page from accessing the original page. If any external links are missing the `rel="external nofollow noopener noreferrer"`[^3] attribute, [let us know](mailto:hy@andka.my.id) and we will update them promptly.
+- **Pelacakan Pengguna dan Analisis**: Kami tidak menerapkan pelacakan pengguna atau analisis apa pun di situs ini. Situs web kami hanya dibuat untuk kepuasan pribadi, dan kami tidak tertarik untuk melacak popularitas situs. Oleh karena itu, tidak ada data yang dikumpulkan, disimpan, atau dianalisis. Tidak ada iklan, mekanisme pelacakan, atau analisis—hanya konten untuk kesenangan membaca Anda.
 
+Jika Anda memiliki pertanyaan atau kekhawatiran tentang praktik privasi kami, silakan hubungi kami di [mailto:hy@andka.my.id].
 
-- **User Tracking and Analytics**: We do not implement any user tracking or analytics on this site. Our website exists solely for personal satisfaction, and we have no interest in tracking site popularity. Therefore, no data is collected, stored, or analyzed. There are no advertisements, tracking mechanisms, or analytics—just content for your reading pleasure.
-
-If you have any questions or concerns about our privacy practices, please feel free to [contact us](mailto:hy@andka.my.id).
-
-<hr class="w-full bg-gray h-1px bg-opacity-25"> 
-
+<hr class="w-full bg-gray h-1px bg-opacity-25">
 
 [^1]: MDN Web Docs: [Web Storage API & Local Storage](https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API)
-[^2]: Cloudflare Learning Center: [What is a DNS server?](https://www.cloudflare.com/learning/dns/what-is-a-dns-server/)
-[^3]: MDN Web Docs: [Link Types](https://developer.mozilla.org/en-US/docs/Web/HTML/Link_types)
-
+[^2]: MDN Web Docs: [Link Types](https://developer.mozilla.org/en-US/docs/Web/HTML/Link_types)

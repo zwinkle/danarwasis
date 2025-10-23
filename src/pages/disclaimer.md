@@ -8,8 +8,8 @@ heroImage: '../assets/images/disclaimer.jpg'
 
 ## General Disclaimer
 
-- The information provided on this website is for general informational purposes only. All content is presented "as is," without any representations or warranties, express or implied. We make no warranties regarding the accuracy, completeness, or reliability of the information provided.
-- We are not liable for any loss or damage arising from the use of or reliance on the information on this website. **Users should verify the information independently** before making any decisions based on it.
-- This website may contain links to external websites. We do not endorse or assume responsibility for the content, practices, or policies of any third-party sites. Users access external links at their own risk.
-- Any site content may be modified, removed, or otherwise altered without notice.
-- Opinions expressed in a blog post may have changed since its date of publication.
+- Informasi yang disediakan di situs web ini hanya untuk tujuan informasi umum. Seluruh konten disajikan “apa adanya,” tanpa jaminan atau representasi apa pun, baik secara eksplisit maupun implisit. Kami tidak memberikan jaminan apa pun mengenai keakuratan, kelengkapan, atau keandalan informasi yang disediakan.
+- Kami tidak bertanggung jawab atas kerugian atau kerusakan apa pun yang timbul akibat penggunaan atau ketergantungan pada informasi yang terdapat di situs web ini. **Pengguna disarankan untuk memverifikasi informasi secara mandiri** sebelum mengambil keputusan berdasarkan informasi tersebut.
+- Situs web ini mungkin mengandung tautan ke situs web eksternal. Kami tidak mendukung atau bertanggung jawab atas konten, praktik, atau kebijakan situs web pihak ketiga mana pun. Pengguna mengakses tautan eksternal atas risiko mereka sendiri.
+- Setiap konten situs dapat diubah, dihapus, atau dimodifikasi dengan cara lain tanpa pemberitahuan sebelumnya.
+- Pendapat yang diungkapkan dalam posting blog mungkin telah berubah sejak tanggal publikasinya.
