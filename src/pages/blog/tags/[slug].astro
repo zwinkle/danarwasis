@@ -63,14 +63,23 @@ const posts = (await getCollection("blog"))
 			return null;
 		})();
 
-		const title =
+		const rawTitle =
 			(typeof notionProps?.Name === "string" && notionProps.Name.trim().length > 0
-				? notionProps.Name
-				: (entry.slug as any).replace(/-/g, " "));
-
-		const notionSlug = notionProps?.slug;
-		const slug =
-			(typeof notionSlug === "string" && notionSlug.trim().length > 0 ? notionSlug : entry.slug);
+				? notionProps.Name.trim()
+				: undefined);
+		const slugify = (s: string) =>
+			s
+				.toLowerCase()
+				.trim()
+				.replace(/\s+/g, "-")
+				.replace(/[^a-z0-9\-]/g, "")
+				.replace(/\-+/g, "-")
+				.replace(/^\-|\-$/g, "");
+		const fallbackFromId = entry.id.replace(/^.*\//, "").replace(/\.md$/i, "");
+		const notionSlug = typeof notionProps?.slug === "string" && notionProps.slug.trim().length > 0 ? notionProps.slug.trim() : undefined;
+		const dataSlug = typeof (entry as any)?.data?.slug === "string" && (entry as any).data.slug.trim().length > 0 ? (entry as any).data.slug.trim() : undefined;
+		const slug = notionSlug ?? dataSlug ?? (rawTitle ? slugify(rawTitle) : slugify(fallbackFromId));
+		const title = rawTitle ?? slug.replace(/-/g, " ");
 
 		const isIdLang = tags.some((t) => t.toLowerCase() === "id");
 
