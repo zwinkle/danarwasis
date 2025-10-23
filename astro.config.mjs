@@ -1,12 +1,12 @@
 import UnoCss from "unocss/astro";
 import { defineConfig } from "astro/config";
 import sitemap from "@astrojs/sitemap";
-import vercel from "@astrojs/vercel";
+import netlify from "@astrojs/netlify";
 import yaml from "@rollup/plugin-yaml";
 
 // https://astro.build/config
 export default defineConfig({
-  site: "https://andka.my.id",
+  site: "https://danarwasis.my.id",
   vite: {
     plugins: [ yaml() ]
   },
@@ -19,7 +19,7 @@ export default defineConfig({
     UnoCss({ injectReset: true }),
   ],
   output: "server",
-  adapter: vercel({
+  adapter: netlify({
     edgeMiddleware: true
   })
 });
