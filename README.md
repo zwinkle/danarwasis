@@ -1,12 +1,12 @@
-# XIRF - Personal Blog & Portfolio
+# Zwinkle - Personal Blog & Portfolio
 
 Simple and clean blog/portfolio website built with <a href="https://astro.build/" target="_blank">Astro</a> and <a href="https://(https://unocss.dev/)" target="_blank">UnoCSS</a>.
 
-Visit [andka.my.id](https://andka.my.id) for live preview
+Visit [danarwasis.my.id](https://danarwasis.my.id) for live preview
 
 <!-- image -->
 
-<figure>
+<!-- <figure>
     <source 
         srcset="https://raw.githubusercontent.com/xirf/xirf-portofolio/main/public/images/screenshot-dark.png"
         media="(prefers-color-scheme: dark)" />
@@ -16,17 +16,15 @@ Visit [andka.my.id](https://andka.my.id) for live preview
     <img
         src="https://raw.githubusercontent.com/xirf/xirf-portofolio/main/public/images/screenshot-light.png"
         alt="XIRF - Personal Blog & Portfolio" />
-</figure>
-
-> [!NOTE]
-> This web will moved to use CMS in the future
+</figure> -->
 
 ## Installation
 
 To run this project locally, you need to have Node.js and npm installed on your machine.
 
-1. Clone this repository
+1. You can fork and clone this repository
 
+[https://github.com/xirf/xirf-portofolio](https://github.com/xirf/xirf-portofolio)
 ```bash
 git clone https://github.com/xirf/xirf-portofolio.git
 ```
