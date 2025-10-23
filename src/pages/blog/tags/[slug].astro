@@ -10,7 +10,7 @@ type NormalizedPost = {
 	title: string;
 	slug: string;
 	publishedAt: Date | null;
-	idOnly?: boolean;
+	isIdLang?: boolean;
 };
 
 const normalizeTags = (raw: unknown): string[] => {
@@ -60,17 +60,19 @@ const posts = (await getCollection("blog"))
 					return parsed;
 				}
 			}
-			return entry.data.pubDate ?? null;
+			return null;
 		})();
 
 		const title =
 			(typeof notionProps?.Name === "string" && notionProps.Name.trim().length > 0
 				? notionProps.Name
-				: entry.data.title) ?? entry.slug.replace(/-/g, " ");
+				: entry.slug.replace(/-/g, " ");
 
 		const notionSlug = notionProps?.slug;
 		const slug =
-			(typeof notionSlug === "string" && notionSlug.trim().length > 0 ? notionSlug : entry.data.slug) ?? entry.slug;
+			(typeof notionSlug === "string" && notionSlug.trim().length > 0 ? notionSlug : entry.slug);
+
+		const isIdLang = tags.some((t) => t.toLowerCase() === "id");
 
 		return {
 			entry,
@@ -78,7 +80,7 @@ const posts = (await getCollection("blog"))
 			title,
 			slug,
 			publishedAt,
-			idOnly: entry.data.idOnly,
+			isIdLang,
 		};
 	})
 	.filter((post) => post.tags.some((postTag) => postTag.toLowerCase() === normalizedTag))
@@ -128,7 +130,7 @@ const postsByYear = posts.reduce<Record<number, NormalizedPost[]>>((acc, post) =
 											"mt-2 relative",
 										{
 											"before:(content-['ID'] absolute -left-10 bg-#5551 text-#888 bg-opacity-25 px-2 py-1 text-xs rounded-md) lang-id":
-												post.idOnly,
+												post.isIdLang,
 										},
 										]}
 										style={`--enter-stage: ${yearIndex > 0 ? yearIndex : ""}${postIndex + 2} !important;`}>
