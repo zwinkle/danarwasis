@@ -66,7 +66,7 @@ const posts = (await getCollection("blog"))
 		const title =
 			(typeof notionProps?.Name === "string" && notionProps.Name.trim().length > 0
 				? notionProps.Name
-				: entry.slug.replace(/-/g, " ");
+				: (entry.slug as any).replace(/-/g, " "));
 
 		const notionSlug = notionProps?.slug;
 		const slug =
