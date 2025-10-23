@@ -1,5 +1,7 @@
 # Zwinkle - Personal Blog & Portfolio
 
+[![Netlify Status](https://api.netlify.com/api/v1/badges/580ae834-573d-4257-84e2-666393dd50b4/deploy-status?branch=main)](https://app.netlify.com/projects/danarwasis/deploys)
+
 Simple and clean blog/portfolio website built with <a href="https://astro.build/" target="_blank">Astro</a> and <a href="https://(https://unocss.dev/)" target="_blank">UnoCSS</a>.
 
 Visit [danarwasis.my.id](https://danarwasis.my.id) for live preview
