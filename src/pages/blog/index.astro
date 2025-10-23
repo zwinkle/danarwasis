@@ -4,122 +4,38 @@ import DefautLayout from "../../layouts/Layout.astro";
 
 export const prerender = false;
 
-type NormalizedPost = {
-	entry: CollectionEntry<"blog">;
-	title: string;
-	slug: string;
-	tags: string[];
-	publishedAt: Date | null;
-	heroImage?: string;
-	description?: string;
-	idOnly?: boolean;
-};
+const posts = (await getCollection("blog")).sort((a: CollectionEntry<"blog">, b: CollectionEntry<"blog">) => {
+	const dateA = b.data.properties.created_at.date?.start ? new Date(b.data.properties.created_at.date.start).getTime() : 0;
+	const dateB = a.data.properties.created_at.date?.start ? new Date(a.data.properties.created_at.date.start).getTime() : 0;
+	return dateA - dateB;
+});
 
-const extractString = (value: unknown): string | null => {
-	if (typeof value === "string") return value;
-	if (value && typeof value === "object") {
-		if ("plain_text" in value && typeof (value as { plain_text?: unknown }).plain_text === "string") {
-			return (value as { plain_text: string }).plain_text;
-		}
-		if ("value" in value && typeof (value as { value?: unknown }).value === "string") {
-			return (value as { value: string }).value;
-		}
-		if ("name" in value && typeof (value as { name?: unknown }).name === "string") {
-			return (value as { name: string }).name;
-		}
-	}
-	return null;
-};
+let postsByYear: Record<number, typeof posts> = {};
 
-const normalizeTags = (raw: unknown): string[] => {
-	if (!raw) return [];
-	if (Array.isArray(raw)) {
-		return raw
-			.map((value) => {
-				if (typeof value === "string") return value;
-				if (value && typeof value === "object") {
-					if ("name" in value && typeof (value as { name?: unknown }).name === "string") {
-						return (value as { name: string }).name;
-					}
-					if ("plain_text" in value && typeof (value as { plain_text?: unknown }).plain_text === "string") {
-						return (value as { plain_text: string }).plain_text;
-					}
-					if ("value" in value && typeof (value as { value?: unknown }).value === "string") {
-						return (value as { value: string }).value;
-					}
-				}
-				return null;
-			})
-			.filter((tag): tag is string => Boolean(tag && tag.trim()))
-			.map((tag) => tag.trim());
-	}
-	return [];
-};
-
-const getPublishedDate = (entry: CollectionEntry<"blog">, notionDate: unknown): Date | null => {
-	if (typeof notionDate === "string") {
-		const parsed = new Date(notionDate);
-		if (!Number.isNaN(parsed.getTime())) return parsed;
-	}
-	const frontmatterDate = entry.data.pubDate;
-	if (frontmatterDate instanceof Date) return frontmatterDate;
-	if (typeof frontmatterDate === "string") {
-		const parsed = new Date(frontmatterDate);
-		if (!Number.isNaN(parsed.getTime())) return parsed;
-	}
-	return null;
-};
-
-const normalizedPosts = (await getCollection("blog"))
-	.map<NormalizedPost>((entry) => {
-		const notionProps = (entry.data as any)?.properties ?? {};
-		const title =
-			extractString(notionProps?.Name) ?? (typeof entry.data.title === "string" ? entry.data.title : entry.slug.replace(/-/g, " "));
-		const slug =
-			extractString(notionProps?.slug) ?? (typeof entry.data.slug === "string" ? entry.data.slug : entry.slug);
-		const notionThumbnail = extractString(notionProps?.thumbnail);
-		const heroImage = notionThumbnail ?? entry.data.heroImage;
-		const tags = normalizeTags(notionProps?.tags ?? (entry.data as any)?.tags);
-		const publishedAt = getPublishedDate(entry, notionProps?.created_at?.date?.start);
-		const description = extractString(notionProps?.description) ?? entry.data.description;
-
-		return {
-			entry,
-			title,
-			slug,
-			tags,
-			publishedAt,
-			heroImage,
-			description,
-			idOnly: entry.data.idOnly,
-		};
-	})
-	.filter((post) => !post.entry.data.draft)
-	.sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0));
-
-const postsByYear = normalizedPosts.reduce<Record<number, NormalizedPost[]>>((acc, post) => {
-	const year = (post.publishedAt ?? new Date()).getFullYear();
-	if (!acc[year]) acc[year] = [];
-	acc[year].push(post);
-	return acc;
-}, {});
+for (const post of posts) {
+	const createdAtDate = post.data.properties.created_at.date;
+	const year = createdAtDate ? new Date(createdAtDate.start).getFullYear() : null;
+	if (year && !postsByYear[year]) postsByYear[year] = [];
+	if (year) postsByYear[year].push(post);
+}
 ---
 
 <DefautLayout
-	title="Zwinkle Blog, sekilas kehidupan"
-	description="Sekilas kisah kehidupan saya sebagai Mahasiswa (untuk sekarang ini, besok tidak tahu)">
+	title="Andka Blog, a collection of my thoughts"
+	description="Here you can find a collection of my thoughts on various topics. I try to write about things that I find interesting, and that I think others might find interesting as well. I hope you enjoy reading them!">
 	<div class="grid gap-6 mt-32 max-w-3xl mx-auto px-12 mb-20 slide-enter-content">
 		<h1>
 			<span class="text-3xl lg:text-4xl font-bold font-lexend">Blog</span>
-			<span class="font-light text-sm">Zwinkle Blog, sekilas kehidupan</span>
+			<span class="font-light text-sm">A collection of my thoughts</span>
 		</h1>
 		<p>
-			Sekilas kisah kehidupan saya sebagai Mahasiswa (untuk sekarang ini, besok tidak tahu)
+			Here you can find a collection of my thoughts on various topics. I try to write about things that I find interesting, and that I think
+			others might find interesting as well. I hope you enjoy reading them!
 		</p>
 		{
 			Object.entries(postsByYear)
 				.sort(([a], [b]) => parseInt(b) - parseInt(a))
-				.map(([year, posts]: [string, NormalizedPost[]], yearIndex: number) => (
+				.map(([year, posts]: [string, any[]], yearIndex: number) => (
 					<div class=" my-12 relative">
 						<div
 							class=" text-2xl font-bold absolute -z-50 font-lexend text-9xl -top-12 -left-12 opacity-10 text-stroke dark:(text-d-base) text-l-base "
@@ -128,31 +44,31 @@ const postsByYear = normalizedPosts.reduce<Record<number, NormalizedPost[]>>((ac
 						</div>
 						<ul class=" mt-4 z-50 gap-4 grid slide-enter-content">
 							{posts
-								.slice()
-								.sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0))
-								.map((post, postIndex: number) => (
+								.sort(
+									(a: any, b: any) =>
+										b.data.properties.created_at.date.start.valueOf() - a.data.properties.created_at.date.start.valueOf()
+								)
+								.map((post: any, postIndex: number) => (
 									<li
 										class:list={[
 											"mt-2 relative",
-										{
-											"before:(content-['ID'] absolute -left-10 bg-#5551 text-#888 bg-opacity-25 px-2 py-1 text-xs rounded-md) lang-id":
-												post.idOnly,
-										},
+											{
+												"before:(content-['ID'] absolute -left-10 bg-#5551 text-#888 bg-opacity-25 px-2 py-1 text-xs rounded-md) lang-id":
+													post.data.idOnly,
+											},
 										]}
 										style={`--enter-stage: ${yearIndex > 0 ? yearIndex : ""}${postIndex + 2} !important;`}>
 										<a
-											href={`/blog/${post.slug}`}
+											href={`/blog/${post.data.properties.slug}`}
 											class="inline-block duration-200 transition-all transform inline-flex items-end gap-4 opacity-90 hover:opacity-100">
 											<p>
-												{post.title}
-												{post.publishedAt && (
-													<span class=" text-xs text-gray-500 inline-block">
-														{post.publishedAt.toLocaleDateString("en-US", {
-															day: "2-digit",
-															month: "long",
-														})}
-													</span>
-												)}
+												{post.data.properties.Name}
+												<span class=" text-xs text-gray-500 inline-block">
+													{new Date(post.data.properties.created_at.date.start).toLocaleDateString("en-US", {
+														day: "2-digit",
+														month: "long",
+													})}
+												</span>
 											</p>
 										</a>
 									</li>
