@@ -77,6 +77,7 @@ const redis = (() => {
 
 const POSTS_CACHE_KEY = "notion:posts";
 const POST_DETAIL_KEY_PREFIX = "notion:post:";
+const PAGE_SLUG_KEY_PREFIX = "notion:page-slug:";
 const LAST_UPDATED_KEY = "notion:last-updated";
 
 async function redisGet<T>(key: string): Promise<T | null> {
@@ -122,6 +123,10 @@ export async function getNotionContentVersion(): Promise<string | null> {
 
 function getPostDetailKey(slug: string): string {
   return `${POST_DETAIL_KEY_PREFIX}${slug}`;
+}
+
+function getPageSlugKey(pageId: string): string {
+  return `${PAGE_SLUG_KEY_PREFIX}${pageId}`;
 }
 
 type FileObject = Parameters<typeof fileToImageAsset>[0];
@@ -353,6 +358,9 @@ export async function getNotionPosts(): Promise<NotionPostSummary[]> {
 
   if (redis) {
     await redisSet(POSTS_CACHE_KEY, summaries);
+    await Promise.all(
+      summaries.map((summary) => redisSet(getPageSlugKey(summary.id), summary.slug)),
+    );
     await markContentUpdated();
   }
 
@@ -563,6 +571,7 @@ async function cacheNotionPost(detail: NotionPostDetail) {
   if (!redis) return;
   const previous = await updateCachedSummaries(detail);
   await redisSet(getPostDetailKey(detail.slug), detail);
+  await redisSet(getPageSlugKey(detail.id), detail.slug);
   if (previous && previous.slug !== detail.slug) {
     await redisDel(getPostDetailKey(previous.slug));
   }
@@ -590,6 +599,7 @@ async function removeCachedPostById(pageId: string) {
   if (!existing) return;
   const next = cached.filter((item) => item.id !== pageId);
   await redisDel(getPostDetailKey(existing.slug));
+  await redisDel(getPageSlugKey(pageId));
   await redisSet(POSTS_CACHE_KEY, sortSummariesByCreatedAt(next));
   await markContentUpdated();
 }
@@ -598,11 +608,15 @@ async function removeCachedPostBySlug(slug: string) {
   if (!redis) return;
   const cached = await redisGet<NotionPostSummary[]>(POSTS_CACHE_KEY);
   if (!cached) return;
+  const target = cached.find((item) => item.slug === slug);
   const next = cached.filter((item) => item.slug !== slug);
   if (next.length === cached.length) {
     return;
   }
   await redisDel(getPostDetailKey(slug));
+  if (target) {
+    await redisDel(getPageSlugKey(target.id));
+  }
   await redisSet(POSTS_CACHE_KEY, sortSummariesByCreatedAt(next));
   await markContentUpdated();
 }

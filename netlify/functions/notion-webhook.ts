@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
-import { refreshNotionCacheForPage } from "../../src/lib/notion";
 
 const notionSigningSecret = process.env.NOTION_SIGNING_SECRET;
+const revalidateToken = process.env.NOTION_REVALIDATE_TOKEN ?? notionSigningSecret;
 
 function unauthorized(message: string) {
   return new Response(message, { status: 401 });
@@ -105,11 +105,9 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   try {
-    await Promise.all(
-      Array.from(pageIds).map(async (pageId) => refreshNotionCacheForPage(pageId)),
-    );
+    await Promise.all(Array.from(pageIds).map(triggerRevalidation));
   } catch (error) {
-    console.error("Failed to refresh Notion cache", error);
+    console.error("Failed to trigger cache refresh", error);
     return new Response("Failed to refresh cache", { status: 500 });
   }
 
@@ -120,4 +118,29 @@ export default async function handler(request: Request): Promise<Response> {
       headers: { "Content-Type": "application/json" },
     },
   );
+}
+
+async function triggerRevalidation(pageId: string) {
+  const baseUrl = process.env.URL ?? process.env.DEPLOY_URL ?? process.env.DEPLOY_PRIME_URL;
+  if (!baseUrl) {
+    throw new Error("Missing base URL for revalidation");
+  }
+  if (!revalidateToken) {
+    throw new Error("Missing NOTION_REVALIDATE_TOKEN");
+  }
+
+  const url = new URL("/api/notion/revalidate.json", baseUrl).toString();
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${revalidateToken}`,
+    },
+    body: JSON.stringify({ pageId }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Revalidate failed (${response.status}): ${text}`);
+  }
 }
