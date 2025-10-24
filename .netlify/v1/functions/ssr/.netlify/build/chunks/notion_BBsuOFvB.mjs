@@ -7,12 +7,11 @@ import rehypeSlug from 'rehype-slug';
 import rehypeStringify from 'rehype-stringify';
 import notionRehype from 'notion-rehype-k';
 import { unified } from 'unified';
-import { a as getImage } from './_astro_assets_DXORqzvp.mjs';
+import { a as getImage } from './_astro_assets_q5IiMePw.mjs';
 import * as z from 'zod';
 import '@astrojs/internal-helpers/path';
 import '@astrojs/internal-helpers/remote';
-import './astro/server_DwqtjhkU.mjs';
-import { Redis } from '@upstash/redis';
+import './astro/server_BpWn34nF.mjs';
 
 /**
  * Extract a plain string from a list of rich text items.
@@ -307,62 +306,6 @@ function getNotionClient() {
 function getDatabaseId() {
   return getEnvVar("NOTION_BD_ID");
 }
-const redis = (() => {
-  if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
-    return null;
-  }
-  try {
-    return Redis.fromEnv();
-  } catch {
-    return null;
-  }
-})();
-const POSTS_CACHE_KEY = "notion:posts";
-const POST_DETAIL_KEY_PREFIX = "notion:post:";
-const PAGE_SLUG_KEY_PREFIX = "notion:page-slug:";
-const LAST_UPDATED_KEY = "notion:last-updated";
-async function redisGet(key) {
-  if (!redis) return null;
-  const value = await redis.get(key);
-  if (value === null || value === void 0) {
-    return null;
-  }
-  if (typeof value === "string") {
-    try {
-      return JSON.parse(value);
-    } catch {
-      return value;
-    }
-  }
-  return value;
-}
-async function redisSet(key, value) {
-  if (!redis) return;
-  if (typeof value === "string") {
-    await redis.set(key, value);
-  } else {
-    await redis.set(key, JSON.stringify(value));
-  }
-}
-async function redisDel(key) {
-  if (!redis) return;
-  await redis.del(key);
-}
-async function markContentUpdated() {
-  if (!redis) return;
-  await redis.set(LAST_UPDATED_KEY, (/* @__PURE__ */ new Date()).toISOString());
-}
-async function getNotionContentVersion() {
-  if (!redis) return null;
-  const value = await redis.get(LAST_UPDATED_KEY);
-  return typeof value === "string" ? value : null;
-}
-function getPostDetailKey(slug) {
-  return `${POST_DETAIL_KEY_PREFIX}${slug}`;
-}
-function getPageSlugKey(pageId) {
-  return `${PAGE_SLUG_KEY_PREFIX}${pageId}`;
-}
 function createBaseProcessor() {
   const processor = unified();
   processor.use(notionRehype, {}).use(rehypeSlug).use(rehypeKatex).use(rehypeStringify);
@@ -514,62 +457,18 @@ const processNotionContent = buildProcessor(
   ])
 );
 async function getNotionPosts() {
-  if (redis) {
-    const cached = await redisGet(POSTS_CACHE_KEY);
-    if (cached) {
-      return cached.map(cloneSummary);
-    }
-  }
   const summaries = await fetchNotionPostsFromApi();
-  if (redis) {
-    await redisSet(POSTS_CACHE_KEY, summaries);
-    await Promise.all(
-      summaries.map((summary) => redisSet(getPageSlugKey(summary.id), summary.slug))
-    );
-    await markContentUpdated();
-  }
   return summaries.map(cloneSummary);
 }
 async function getNotionPost(slug) {
-  if (redis) {
-    const cached = await redisGet(getPostDetailKey(slug));
-    if (cached) {
-      return cloneDetail(cached);
-    }
-  }
   const detail = await fetchNotionPostFromApi(slug);
-  if (!detail && redis) {
-    await removeCachedPostBySlug(slug);
-  }
   return detail ? cloneDetail(detail) : null;
 }
-async function invalidateNotionCacheForPage(pageId) {
-  if (!redis) return;
-  const slug = await redisGet(getPageSlugKey(pageId));
-  if (slug) {
-    await removeCachedPostBySlug(slug);
-    return;
-  }
-  await removeCachedPostById(pageId);
+async function invalidateNotionCacheForPage(_pageId) {
+  return;
 }
 async function rebuildNotionCache() {
-  const summaries = await fetchNotionPostsFromApi();
-  if (!redis) {
-    return;
-  }
-  await redisSet(POSTS_CACHE_KEY, summaries);
-  await Promise.all(
-    summaries.map((summary) => redisSet(getPageSlugKey(summary.id), summary.slug))
-  );
-  await markContentUpdated();
-  await Promise.all(
-    summaries.map(async (summary) => {
-      const detail = await fetchNotionPostFromApi(summary.slug);
-      if (!detail) {
-        await removeCachedPostById(summary.id);
-      }
-    })
-  );
+  await fetchNotionPostsFromApi();
 }
 function cloneSummary(summary) {
   return {
@@ -689,7 +588,6 @@ async function fetchNotionPostFromApi(slug) {
     return null;
   }
   const detail = await buildDetailFromPage(notion, page);
-  await cacheNotionPost(detail);
   return detail;
 }
 async function buildDetailFromPage(notion, page, summary) {
@@ -702,53 +600,5 @@ async function buildDetailFromPage(notion, page, summary) {
     headings: rendered?.metadata?.headings ?? []
   };
 }
-async function cacheNotionPost(detail) {
-  if (!redis) return;
-  const previous = await updateCachedSummaries(detail);
-  await redisSet(getPostDetailKey(detail.slug), detail);
-  await redisSet(getPageSlugKey(detail.id), detail.slug);
-  if (previous && previous.slug !== detail.slug) {
-    await redisDel(getPostDetailKey(previous.slug));
-  }
-  await markContentUpdated();
-}
-async function updateCachedSummaries(summary) {
-  if (!redis) return null;
-  const cached = await redisGet(POSTS_CACHE_KEY) ?? [];
-  const previous = cached.find((item) => item.id === summary.id) ?? null;
-  const next = cached.filter((item) => item.id !== summary.id);
-  next.push(cloneSummary(summary));
-  const sorted = sortSummariesByCreatedAt(next);
-  await redisSet(POSTS_CACHE_KEY, sorted);
-  return previous;
-}
-async function removeCachedPostById(pageId) {
-  if (!redis) return;
-  const cached = await redisGet(POSTS_CACHE_KEY);
-  if (!cached) return;
-  const existing = cached.find((item) => item.id === pageId);
-  if (!existing) return;
-  const next = cached.filter((item) => item.id !== pageId);
-  await redisDel(getPostDetailKey(existing.slug));
-  await redisDel(getPageSlugKey(pageId));
-  await redisSet(POSTS_CACHE_KEY, sortSummariesByCreatedAt(next));
-  await markContentUpdated();
-}
-async function removeCachedPostBySlug(slug) {
-  if (!redis) return;
-  const cached = await redisGet(POSTS_CACHE_KEY);
-  if (!cached) return;
-  const target = cached.find((item) => item.slug === slug);
-  const next = cached.filter((item) => item.slug !== slug);
-  if (next.length === cached.length) {
-    return;
-  }
-  await redisDel(getPostDetailKey(slug));
-  if (target) {
-    await redisDel(getPageSlugKey(target.id));
-  }
-  await redisSet(POSTS_CACHE_KEY, sortSummariesByCreatedAt(next));
-  await markContentUpdated();
-}
 
-export { getNotionPosts as a, getNotionPost as b, getNotionContentVersion as g, invalidateNotionCacheForPage as i, rebuildNotionCache as r };
+export { getNotionPost as a, getNotionPosts as g, invalidateNotionCacheForPage as i, rebuildNotionCache as r };

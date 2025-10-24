@@ -1,5 +1,5 @@
 import { isRemotePath } from '@astrojs/internal-helpers/path';
-import { t as toStyleString, A as AstroError, N as NoImageMetadata, h as FailedToFetchRemoteImageDimensions, E as ExpectedImageOptions, i as ExpectedImage, j as ExpectedNotESMImage, I as InvalidImageService, d as createAstro, c as createComponent, k as ImageMissingAlt, m as maybeRenderHead, b as addAttribute, s as spreadAttributes, r as renderTemplate, l as ExperimentalFontsNotEnabled, n as FontFamilyNotFound, u as unescapeHTML } from './astro/server_DwqtjhkU.mjs';
+import { t as toStyleString, A as AstroError, N as NoImageMetadata, g as FailedToFetchRemoteImageDimensions, E as ExpectedImageOptions, h as ExpectedImage, i as ExpectedNotESMImage, I as InvalidImageService, d as createAstro, c as createComponent, j as ImageMissingAlt, m as maybeRenderHead, b as addAttribute, s as spreadAttributes, r as renderTemplate, k as ExperimentalFontsNotEnabled, l as FontFamilyNotFound, u as unescapeHTML } from './astro/server_BpWn34nF.mjs';
 import '@astrojs/internal-helpers/remote';
 import * as mime from 'mrmime';
 import 'clsx';

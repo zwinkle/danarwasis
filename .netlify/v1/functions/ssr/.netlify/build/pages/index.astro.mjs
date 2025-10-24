@@ -1,7 +1,7 @@
 /* empty css                                  */
-import { c as createComponent, a as renderComponent, r as renderTemplate, m as maybeRenderHead, b as addAttribute } from '../chunks/astro/server_DwqtjhkU.mjs';
+import { c as createComponent, a as renderComponent, r as renderTemplate, m as maybeRenderHead, b as addAttribute } from '../chunks/astro/server_BpWn34nF.mjs';
 import 'kleur/colors';
-import { $ as $$Layout } from '../chunks/Layout_D9HZCX9x.mjs';
+import { $ as $$Layout } from '../chunks/Layout_DwNEso5n.mjs';
 export { renderers } from '../renderers.mjs';
 
 const $$Index = createComponent(($$result, $$props, $$slots) => {

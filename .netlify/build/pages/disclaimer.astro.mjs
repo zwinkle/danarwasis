@@ -1,7 +1,7 @@
 /* empty css                                  */
-import { c as createComponent, a as renderComponent, r as renderTemplate, u as unescapeHTML } from '../chunks/astro/server_DwqtjhkU.mjs';
+import { c as createComponent, a as renderComponent, r as renderTemplate, u as unescapeHTML } from '../chunks/astro/server_BpWn34nF.mjs';
 import 'kleur/colors';
-import { $ as $$PlainMarkdown } from '../chunks/PlainMarkdown_Dc8JnyyJ.mjs';
+import { $ as $$PlainMarkdown } from '../chunks/PlainMarkdown_DwBIL6Hf.mjs';
 export { renderers } from '../renderers.mjs';
 
 const html = () => "<h1 id=\"disclaimer\">Disclaimer</h1>\n<h2 id=\"general-disclaimer\">General Disclaimer</h2>\n<ul>\n<li>Informasi yang disediakan di situs web ini hanya untuk tujuan informasi umum. Seluruh konten disajikan “apa adanya,” tanpa jaminan atau representasi apa pun, baik secara eksplisit maupun implisit. Kami tidak memberikan jaminan apa pun mengenai keakuratan, kelengkapan, atau keandalan informasi yang disediakan.</li>\n<li>Kami tidak bertanggung jawab atas kerugian atau kerusakan apa pun yang timbul akibat penggunaan atau ketergantungan pada informasi yang terdapat di situs web ini. <strong>Pengguna disarankan untuk memverifikasi informasi secara mandiri</strong> sebelum mengambil keputusan berdasarkan informasi tersebut.</li>\n<li>Situs web ini mungkin mengandung tautan ke situs web eksternal. Kami tidak mendukung atau bertanggung jawab atas konten, praktik, atau kebijakan situs web pihak ketiga mana pun. Pengguna mengakses tautan eksternal atas risiko mereka sendiri.</li>\n<li>Setiap konten situs dapat diubah, dihapus, atau dimodifikasi dengan cara lain tanpa pemberitahuan sebelumnya.</li>\n<li>Pendapat yang diungkapkan dalam posting blog mungkin telah berubah sejak tanggal publikasinya.</li>\n</ul>";

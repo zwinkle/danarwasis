@@ -1,4 +1,4 @@
-import { i as invalidateNotionCacheForPage } from '../../../chunks/notion_BPuEf98Q.mjs';
+import { i as invalidateNotionCacheForPage } from '../../../chunks/notion_BBsuOFvB.mjs';
 export { renderers } from '../../../renderers.mjs';
 
 const prerender = false;

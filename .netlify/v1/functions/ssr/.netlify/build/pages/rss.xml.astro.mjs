@@ -1,4 +1,4 @@
-import { a as getNotionPosts, b as getNotionPost } from '../chunks/notion_BPuEf98Q.mjs';
+import { g as getNotionPosts, a as getNotionPost } from '../chunks/notion_BBsuOFvB.mjs';
 import rss from '@astrojs/rss';
 export { renderers } from '../renderers.mjs';
 

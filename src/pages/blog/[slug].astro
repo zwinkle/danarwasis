@@ -4,7 +4,6 @@ import type { MarkdownHeading } from "astro";
 import {
 	getNotionPost,
 	getNotionPosts,
-	getNotionContentVersion,
 } from "../../lib/notion";
 
 export const prerender = false;
@@ -14,8 +13,6 @@ const numOfPost = posts.length;
 const params = Astro.params.slug;
 const postIndex = posts.findIndex((post) => post.slug === params);
 const postDetail = params ? await getNotionPost(params) : null;
-const contentVersion = await getNotionContentVersion();
-
 function getAtIndex(index: number) {
 	const target = posts[index];
 	return target
@@ -129,38 +126,3 @@ const nextPost = getAtIndex(postIndex);
 		</div>
 	</div>
 </BlogPost>
-
-<script is:inline define:vars={{ initialVersion: contentVersion ?? null }}>
-	(() => {
-		let currentVersion = initialVersion;
-		const intervalMs = 12000;
-
-		async function poll() {
-			try {
-				const response = await fetch("/api/notion/updates.json", {
-					cache: "no-store",
-					headers: { "Cache-Control": "no-store" },
-				});
-				if (!response.ok) {
-					return;
-				}
-				const data = await response.json();
-				const nextVersion = data?.updatedAt ?? null;
-				if (!nextVersion) {
-					return;
-				}
-				if (!currentVersion) {
-					currentVersion = nextVersion;
-					return;
-				}
-				if (currentVersion !== nextVersion) {
-					window.location.reload();
-				}
-			} catch (error) {
-				console.debug("notion post poll failed", error);
-			}
-		}
-
-		setInterval(poll, intervalMs);
-	})();
-</script>

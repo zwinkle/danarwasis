@@ -20,7 +20,6 @@ import rehypeStringify from "rehype-stringify";
 import notionRehype from "notion-rehype-k";
 import { unified, type Plugin } from "unified";
 import { fileToImageAsset, fileToUrl } from "notion-astro-loader";
-import { Redis } from "@upstash/redis";
 
 type Logger = {
   info: (...args: unknown[]) => void;
@@ -62,71 +61,6 @@ function getNotionClient(): Client {
 
 function getDatabaseId(): string {
   return getEnvVar("NOTION_BD_ID");
-}
-
-const redis = (() => {
-  if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
-    return null;
-  }
-  try {
-    return Redis.fromEnv();
-  } catch {
-    return null;
-  }
-})();
-
-const POSTS_CACHE_KEY = "notion:posts";
-const POST_DETAIL_KEY_PREFIX = "notion:post:";
-const PAGE_SLUG_KEY_PREFIX = "notion:page-slug:";
-const LAST_UPDATED_KEY = "notion:last-updated";
-
-async function redisGet<T>(key: string): Promise<T | null> {
-  if (!redis) return null;
-  const value = await redis.get<string>(key);
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value === "string") {
-    try {
-      return JSON.parse(value) as T;
-    } catch {
-      return value as unknown as T;
-    }
-  }
-  return value as T;
-}
-
-async function redisSet<T>(key: string, value: T) {
-  if (!redis) return;
-  if (typeof value === "string") {
-    await redis.set(key, value);
-  } else {
-    await redis.set(key, JSON.stringify(value));
-  }
-}
-
-async function redisDel(key: string) {
-  if (!redis) return;
-  await redis.del(key);
-}
-
-async function markContentUpdated() {
-  if (!redis) return;
-  await redis.set(LAST_UPDATED_KEY, new Date().toISOString());
-}
-
-export async function getNotionContentVersion(): Promise<string | null> {
-  if (!redis) return null;
-  const value = await redis.get<string>(LAST_UPDATED_KEY);
-  return typeof value === "string" ? value : null;
-}
-
-function getPostDetailKey(slug: string): string {
-  return `${POST_DETAIL_KEY_PREFIX}${slug}`;
-}
-
-function getPageSlugKey(pageId: string): string {
-  return `${PAGE_SLUG_KEY_PREFIX}${pageId}`;
 }
 
 type FileObject = Parameters<typeof fileToImageAsset>[0];
@@ -347,74 +281,22 @@ export interface NotionPostDetail extends NotionPostSummary {
 }
 
 export async function getNotionPosts(): Promise<NotionPostSummary[]> {
-  if (redis) {
-    const cached = await redisGet<NotionPostSummary[]>(POSTS_CACHE_KEY);
-    if (cached) {
-      return cached.map(cloneSummary);
-    }
-  }
-
   const summaries = await fetchNotionPostsFromApi();
-
-  if (redis) {
-    await redisSet(POSTS_CACHE_KEY, summaries);
-    await Promise.all(
-      summaries.map((summary) => redisSet(getPageSlugKey(summary.id), summary.slug)),
-    );
-    await markContentUpdated();
-  }
 
   return summaries.map(cloneSummary);
 }
 
 export async function getNotionPost(slug: string): Promise<NotionPostDetail | null> {
-  if (redis) {
-    const cached = await redisGet<NotionPostDetail>(getPostDetailKey(slug));
-    if (cached) {
-      return cloneDetail(cached);
-    }
-  }
-
   const detail = await fetchNotionPostFromApi(slug);
-
-  if (!detail && redis) {
-    await removeCachedPostBySlug(slug);
-  }
-
   return detail ? cloneDetail(detail) : null;
 }
 
-export async function invalidateNotionCacheForPage(pageId: string): Promise<void> {
-  if (!redis) return;
-  const slug = await redisGet<string>(getPageSlugKey(pageId));
-  if (slug) {
-    await removeCachedPostBySlug(slug);
-    return;
-  }
-  await removeCachedPostById(pageId);
+export async function invalidateNotionCacheForPage(_pageId: string): Promise<void> {
+  return;
 }
 
 export async function rebuildNotionCache(): Promise<void> {
-  const summaries = await fetchNotionPostsFromApi();
-
-  if (!redis) {
-    return;
-  }
-
-  await redisSet(POSTS_CACHE_KEY, summaries);
-  await Promise.all(
-    summaries.map((summary) => redisSet(getPageSlugKey(summary.id), summary.slug)),
-  );
-  await markContentUpdated();
-
-  await Promise.all(
-    summaries.map(async (summary) => {
-      const detail = await fetchNotionPostFromApi(summary.slug);
-      if (!detail) {
-        await removeCachedPostById(summary.id);
-      }
-    }),
-  );
+  await fetchNotionPostsFromApi();
 }
 
 function cloneSummary(summary: NotionPostSummary): NotionPostSummary {
@@ -554,7 +436,6 @@ async function fetchNotionPostFromApi(slug: string): Promise<NotionPostDetail | 
   }
 
   const detail = await buildDetailFromPage(notion, page);
-  await cacheNotionPost(detail);
   return detail;
 }
 
@@ -574,56 +455,4 @@ async function buildDetailFromPage(
   };
 }
 
-async function cacheNotionPost(detail: NotionPostDetail) {
-  if (!redis) return;
-  const previous = await updateCachedSummaries(detail);
-  await redisSet(getPostDetailKey(detail.slug), detail);
-  await redisSet(getPageSlugKey(detail.id), detail.slug);
-  if (previous && previous.slug !== detail.slug) {
-    await redisDel(getPostDetailKey(previous.slug));
-  }
-  await markContentUpdated();
-}
 
-async function updateCachedSummaries(
-  summary: NotionPostSummary,
-): Promise<NotionPostSummary | null> {
-  if (!redis) return null;
-  const cached = (await redisGet<NotionPostSummary[]>(POSTS_CACHE_KEY)) ?? [];
-  const previous = cached.find((item) => item.id === summary.id) ?? null;
-  const next = cached.filter((item) => item.id !== summary.id);
-  next.push(cloneSummary(summary));
-  const sorted = sortSummariesByCreatedAt(next);
-  await redisSet(POSTS_CACHE_KEY, sorted);
-  return previous;
-}
-
-async function removeCachedPostById(pageId: string) {
-  if (!redis) return;
-  const cached = await redisGet<NotionPostSummary[]>(POSTS_CACHE_KEY);
-  if (!cached) return;
-  const existing = cached.find((item) => item.id === pageId);
-  if (!existing) return;
-  const next = cached.filter((item) => item.id !== pageId);
-  await redisDel(getPostDetailKey(existing.slug));
-  await redisDel(getPageSlugKey(pageId));
-  await redisSet(POSTS_CACHE_KEY, sortSummariesByCreatedAt(next));
-  await markContentUpdated();
-}
-
-async function removeCachedPostBySlug(slug: string) {
-  if (!redis) return;
-  const cached = await redisGet<NotionPostSummary[]>(POSTS_CACHE_KEY);
-  if (!cached) return;
-  const target = cached.find((item) => item.slug === slug);
-  const next = cached.filter((item) => item.slug !== slug);
-  if (next.length === cached.length) {
-    return;
-  }
-  await redisDel(getPostDetailKey(slug));
-  if (target) {
-    await redisDel(getPageSlugKey(target.id));
-  }
-  await redisSet(POSTS_CACHE_KEY, sortSummariesByCreatedAt(next));
-  await markContentUpdated();
-}

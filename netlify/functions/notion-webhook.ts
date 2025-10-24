@@ -111,29 +111,28 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   const endpoint = resolveRefreshEndpoint();
-  if (!endpoint) {
-    return new Response("Refresh endpoint not configured", { status: 500 });
-  }
+  let siteRefresh: "skipped" | "success" | "failed" = "skipped";
+  let message: string | undefined;
 
-  if (!notionRevalidateToken) {
-    return new Response("Refresh token not configured", { status: 500 });
-  }
-
-  const refreshResponse = await triggerRefresh(endpoint, notionRevalidateToken);
-  if (!refreshResponse.ok) {
-    const message = await refreshResponse.text().catch(() => "");
-    return new Response(message || "Refresh endpoint returned non-2xx status", {
-      status: 502,
-    });
+  if (endpoint && notionRevalidateToken) {
+    const refreshResponse = await triggerRefresh(endpoint, notionRevalidateToken);
+    if (refreshResponse.ok) {
+      siteRefresh = "success";
+    } else {
+      siteRefresh = "failed";
+      message = await refreshResponse.text().catch(() => "");
+    }
   }
 
   return new Response(
     JSON.stringify({
       status: "refreshed",
       pages: Array.from(relevantPageIds),
+      siteRefresh,
+      message: message && message.length ? message : undefined,
     }),
     {
-      status: 200,
+      status: siteRefresh === "failed" ? 207 : 200,
       headers: { "Content-Type": "application/json" },
     },
   );
