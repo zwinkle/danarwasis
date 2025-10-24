@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
 
-import { rebuildNotionCache } from "../../src/lib/notion";
-
 const notionSigningSecret = process.env.NOTION_SIGNING_SECRET;
 const notionDatabaseId = process.env.NOTION_BD_ID;
+const notionRevalidateToken =
+  process.env.NOTION_REVALIDATE_TOKEN ?? process.env.NOTION_SIGNING_SECRET;
+const notionRevalidateEndpoint = process.env.NOTION_REVALIDATE_ENDPOINT;
 
 function unauthorized(message: string) {
   return new Response(message, { status: 401 });
@@ -109,10 +110,15 @@ export default async function handler(request: Request): Promise<Response> {
     });
   }
 
-  try {
-    await rebuildNotionCache();
-  } catch (error) {
-    return new Response("Failed to refresh cache", { status: 500 });
+  const endpoint = resolveRefreshEndpoint();
+  if (!endpoint || !notionRevalidateToken) {
+    return new Response("Refresh endpoint not configured", { status: 500 });
+  }
+
+  const refreshResponse = await triggerRefresh(endpoint, notionRevalidateToken);
+  if (!refreshResponse.ok) {
+    const message = await refreshResponse.text().catch(() => "");
+    return new Response(message || "Failed to refresh cache", { status: 502 });
   }
 
   return new Response(
@@ -159,4 +165,36 @@ function matchesDatabaseId(candidate: unknown, expected: string): boolean {
 
 function normalizeId(value: string): string {
   return value.replace(/-/g, "").toLowerCase();
+}
+
+function resolveRefreshEndpoint(): string | null {
+  if (notionRevalidateEndpoint) {
+    return sanitizeUrl(notionRevalidateEndpoint);
+  }
+
+  const baseUrl =
+    process.env.NOTION_REVALIDATE_BASE_URL ??
+    process.env.SITE_URL ??
+    process.env.URL ??
+    process.env.DEPLOY_URL ??
+    null;
+
+  if (!baseUrl) {
+    return null;
+  }
+
+  return `${sanitizeUrl(baseUrl)}/api/notion/refresh.json`;
+}
+
+function sanitizeUrl(url: string): string {
+  return url.replace(/\/$/, "");
+}
+
+function triggerRefresh(endpoint: string, token: string): Promise<Response> {
+  return fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
 }
