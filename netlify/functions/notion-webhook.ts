@@ -59,6 +59,10 @@ function verifyNotionSignature(headers: Headers, body: string) {
 }
 
 export default async function handler(request: Request): Promise<Response> {
+  if (request.method === "GET" || request.method === "HEAD") {
+    return new Response("OK", { status: 200 });
+  }
+
   if (request.method !== "POST") {
     return new Response("Method Not Allowed", {
       status: 405,
