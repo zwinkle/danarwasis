@@ -384,23 +384,14 @@ export async function getNotionPost(slug: string): Promise<NotionPostDetail | nu
   return detail ? cloneDetail(detail) : null;
 }
 
-export async function refreshNotionCacheForPage(pageId: string): Promise<void> {
-  const notion = getNotionClient();
-  const page = await notion.pages.retrieve({ page_id: pageId });
-
-  if (!isFullPage(page)) {
-    await removeCachedPostById(pageId);
+export async function invalidateNotionCacheForPage(pageId: string): Promise<void> {
+  if (!redis) return;
+  const slug = await redisGet<string>(getPageSlugKey(pageId));
+  if (slug) {
+    await removeCachedPostBySlug(slug);
     return;
   }
-
-  const published = getCheckbox(page.properties?.published);
-  if (!published) {
-    await removeCachedPostById(page.id);
-    return;
-  }
-
-  const detail = await buildDetailFromPage(notion, page);
-  await cacheNotionPost(detail);
+  await removeCachedPostById(pageId);
 }
 
 function cloneSummary(summary: NotionPostSummary): NotionPostSummary {
@@ -482,13 +473,6 @@ function getMultiSelect(property: any): string[] {
     return property.multi_select?.map((item: any) => item.name).filter(Boolean) ?? [];
   }
   return [];
-}
-
-function getCheckbox(property: any): boolean {
-  if (property?.type === "checkbox") {
-    return Boolean(property.checkbox);
-  }
-  return false;
 }
 
 function sortSummariesByCreatedAt(posts: NotionPostSummary[]): NotionPostSummary[] {

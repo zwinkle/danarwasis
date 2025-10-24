@@ -1,4 +1,4 @@
-import { refreshNotionCacheForPage } from "../../../lib/notion";
+import { invalidateNotionCacheForPage } from "../../../lib/notion";
 
 export const prerender = false;
 
@@ -32,10 +32,12 @@ export async function POST({ request }: { request: Request }) {
   }
 
   try {
-    await refreshNotionCacheForPage(pageId);
+    await invalidateNotionCacheForPage(pageId);
   } catch (error) {
     console.error("Failed to refresh cache for page", pageId, error);
-    return new Response(JSON.stringify({ error: "Failed to refresh cache" }), {
+    const message =
+      error instanceof Error ? error.message : typeof error === "string" ? error : "Failed to refresh cache";
+    return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
