@@ -1,6 +1,5 @@
 import { SITE_DESCRIPTION, SITE_TITLE } from "../consts";
-
-import { getNotionPosts, getNotionPost, type NotionPostSummary, type NotionPostDetail } from "../lib/notion";
+import { getNotionPosts, getNotionPost } from "../lib/notion";
 import rss from "@astrojs/rss";
 
 export const prerender = false;
@@ -28,8 +27,11 @@ export async function GET(context) {
   );
 
   const items = posts
-    .filter((item): item is { summary: NotionPostSummary; detail: NotionPostDetail } => item !== null)
-    .map(({ summary, detail }) => ({
+    .filter((item) => item !== null)
+    .map((item) => {
+      const { summary, detail } = item;
+
+      return {
       categories: summary.tags,
       author: "Andika",
       link: `/blog/${summary.slug}/`,
@@ -37,7 +39,8 @@ export async function GET(context) {
       pubDate: summary.createdAt ? new Date(summary.createdAt) : new Date(),
       description: getExcerpt(detail.html || ""),
       content: detail.html,
-    }));
+      };
+    });
 
   return rss({
     title: SITE_TITLE,

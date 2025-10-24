@@ -1,10 +1,7 @@
 import { Client, isFullPage } from "@notionhq/client";
-import { env } from "astro:env/server";
 import rehypeExternalLinks from "rehype-external-links";
 import rehypeShiki from "@shikijs/rehype";
-
-// Not exported from the package root, so we rely on the compiled output.
-import { buildProcessor, NotionPageRenderer } from "notion-astro-loader/dist/render.js";
+import { buildProcessor, NotionPageRenderer } from "notion-astro-loader";
 
 type Logger = {
   info: (...args: unknown[]) => void;
@@ -24,27 +21,28 @@ const noopLogger: Logger = {
 
 let cachedNotionClient: Client | null = null;
 
+function getEnvVar(key: "NOTION_TOKEN" | "NOTION_BD_ID"): string {
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`Missing ${key} environment variable`);
+  }
+
+  return value;
+}
+
 function getNotionClient(): Client {
   if (cachedNotionClient) {
     return cachedNotionClient;
   }
 
-  const token = env.NOTION_TOKEN;
-  if (!token) {
-    throw new Error("Missing NOTION_TOKEN environment variable");
-  }
+  const token = getEnvVar("NOTION_TOKEN");
 
   cachedNotionClient = new Client({ auth: token });
   return cachedNotionClient;
 }
 
 function getDatabaseId(): string {
-  const databaseId = env.NOTION_BD_ID;
-  if (!databaseId) {
-    throw new Error("Missing NOTION_BD_ID environment variable");
-  }
-
-  return databaseId;
+  return getEnvVar("NOTION_BD_ID");
 }
 
 type CacheEntry<T> = {
