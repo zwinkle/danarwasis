@@ -48,6 +48,9 @@ const pageData = {
 		slug: postDetail.slug,
 		description: getExcerpt(postDetail.html, 1),
 		pubDate: new Date(postDetail.createdAt ?? new Date()),
+		createdAt: postDetail.createdAt,
+		updatedAt: postDetail.updatedAt,
+		id: postDetail.id,
 		headings: postDetail.headings,
 		credit: postDetail.credit,
 		tags: postDetail.tags,
@@ -60,6 +63,7 @@ const prevPost = getAtIndex(postIndex);
 const nextPost = getAtIndex(postIndex);
 // const prevPost = postIndex > 0 ? getAtIndex(postIndex - 1) : null;
 // const nextPost = postIndex < numOfPost - 1 ? getAtIndex(postIndex + 1) : null;
+const serializedPost = JSON.stringify(pageData.post).replace(/</g, "\\u003c");
 ---
 
 
@@ -126,3 +130,96 @@ const nextPost = getAtIndex(postIndex);
 		</div>
 	</div>
 </BlogPost>
+
+<script type="application/json" data-blog-post-detail data-blog-slug={params} set:html={serializedPost} is:inline></script>
+<script type="module" is:inline>
+	const detailScript = document.querySelector("script[data-blog-post-detail]");
+	const slug = detailScript?.dataset.blogSlug ?? "";
+	if (!slug || !detailScript) {
+		console.warn("Blog detail auto-refresh: missing slug or data script");
+	} else {
+		let currentPost = null;
+		try {
+			const raw = detailScript.textContent?.trim() ?? "{}";
+			currentPost = normalizePost(JSON.parse(raw));
+		} catch (error) {
+			console.error("Blog detail auto-refresh: failed to parse initial post", error);
+		}
+
+		let currentSignature = createSignature(currentPost);
+		let reloadScheduled = false;
+		const REFRESH_INTERVAL = 60_000;
+
+		async function fetchLatestPost() {
+			if (reloadScheduled) {
+				return;
+			}
+			try {
+				const response = await fetch(`/api/blog/${encodeURIComponent(slug)}.json`, {
+					headers: { Accept: "application/json" },
+					cache: "no-store",
+				});
+				if (!response.ok) {
+					return;
+				}
+				const data = await response.json();
+				const latestPost = normalizePost(data?.post);
+				const signature = createSignature(latestPost);
+				if (signature && signature !== currentSignature) {
+					reloadScheduled = true;
+					window.location.reload();
+				}
+			} catch (error) {
+				const isAbortError =
+					error instanceof DOMException ? error.name === "AbortError" : false;
+				if (!isAbortError) {
+					console.error("Blog detail auto-refresh: failed to fetch latest post", error);
+				}
+			}
+		}
+
+		function scheduleRefresh() {
+			fetchLatestPost();
+			setInterval(() => {
+				if (!document.hidden) {
+					fetchLatestPost();
+				}
+			}, REFRESH_INTERVAL);
+		}
+
+		document.addEventListener("visibilitychange", () => {
+			if (!document.hidden) {
+				fetchLatestPost();
+			}
+		});
+
+		scheduleRefresh();
+	}
+
+	function normalizePost(raw) {
+		if (!raw || typeof raw !== "object") {
+			return null;
+		}
+		return {
+			id: typeof raw.id === "string" ? raw.id : "",
+			slug: typeof raw.slug === "string" ? raw.slug : "",
+			title: typeof raw.title === "string" ? raw.title : "",
+			html: typeof raw.html === "string" ? raw.html : "",
+			createdAt: typeof raw.createdAt === "string" ? raw.createdAt : null,
+			updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : null,
+		};
+	}
+
+	function createSignature(post) {
+		if (!post) {
+			return "";
+		}
+		return JSON.stringify({
+			id: post.id,
+			slug: post.slug,
+			title: post.title,
+			updatedAt: post.updatedAt,
+			html: post.html,
+		});
+	}
+</script>
