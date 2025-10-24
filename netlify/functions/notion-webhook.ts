@@ -1,22 +1,15 @@
-import type { Handler, HandlerResponse } from "@netlify/functions";
 import crypto from "node:crypto";
 
 const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
 const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
 const notionSigningSecret = process.env.NOTION_SIGNING_SECRET;
 
-function unauthorized(message: string): HandlerResponse {
-  return {
-    statusCode: 401,
-    body: message,
-  };
+function unauthorized(message: string) {
+  return new Response(message, { status: 401 });
 }
 
-function badRequest(message: string): HandlerResponse {
-  return {
-    statusCode: 400,
-    body: message,
-  };
+function badRequest(message: string) {
+  return new Response(message, { status: 400 });
 }
 
 async function writeRedis(command: string, ...args: string[]) {
@@ -40,13 +33,13 @@ async function writeRedis(command: string, ...args: string[]) {
   }
 }
 
-function verifyNotionSignature(headers: Record<string, string>, body: string) {
+function verifyNotionSignature(headers: Headers, body: string) {
   if (!notionSigningSecret) {
     return true;
   }
 
-  const signatureHeader = headers["x-notion-signature"];
-  const timestampHeader = headers["x-notion-timestamp"];
+  const signatureHeader = headers.get("x-notion-signature");
+  const timestampHeader = headers.get("x-notion-timestamp");
 
   if (!signatureHeader || !timestampHeader) {
     return false;
@@ -65,18 +58,17 @@ function verifyNotionSignature(headers: Record<string, string>, body: string) {
   return crypto.timingSafeEqual(provided, expectedBuf);
 }
 
-const handler: Handler = async (event) => {
-  if (event.httpMethod !== "POST") {
-    return {
-      statusCode: 405,
+export default async function handler(request: Request): Promise<Response> {
+  if (request.method !== "POST") {
+    return new Response("Method Not Allowed", {
+      status: 405,
       headers: { Allow: "POST" },
-      body: "Method Not Allowed",
-    } satisfies HandlerResponse;
+    });
   }
 
-  const rawBody = event.body ?? "";
+  const rawBody = await request.text();
 
-  if (!verifyNotionSignature(event.headers as Record<string, string>, rawBody)) {
+  if (!verifyNotionSignature(request.headers, rawBody)) {
     return unauthorized("Invalid signature");
   }
 
@@ -93,11 +85,13 @@ const handler: Handler = async (event) => {
 
   if (payload.type === "url_verification" || payload.type === "url_validation") {
     // Notion will send this when validating the webhook URL.
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ challenge: payload.challenge }),
-    } satisfies HandlerResponse;
+    return new Response(
+      JSON.stringify({ challenge: payload.challenge }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 
   if (!redisUrl || !redisToken) {
@@ -120,10 +114,10 @@ const handler: Handler = async (event) => {
   }
 
   if (!pageIds.size) {
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ status: "no-op" }),
-    } satisfies HandlerResponse;
+    return new Response(JSON.stringify({ status: "no-op" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const timestamp = new Date().toISOString();
@@ -137,16 +131,14 @@ const handler: Handler = async (event) => {
     );
   } catch (error) {
     console.error("Failed to record updates", error);
-    return {
-      statusCode: 500,
-      body: "Failed to persist updates",
-    } satisfies HandlerResponse;
+    return new Response("Failed to persist updates", { status: 500 });
   }
 
-  return {
-    statusCode: 200,
-    body: JSON.stringify({ status: "ok", pages: Array.from(pageIds) }),
-  } satisfies HandlerResponse;
-};
-
-export { handler as default };
+  return new Response(
+    JSON.stringify({ status: "ok", pages: Array.from(pageIds) }),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
