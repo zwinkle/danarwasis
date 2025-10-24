@@ -9,11 +9,13 @@
 
 	<script>
 		try {
-            const currentYear = new Date().getFullYear();
-            document.getElementById("year").textContent = currentYear;
-        } catch (error) {
-            console.error("Gagal mendapatkan data Tahun:", error);
-        }
+			const el = document.getElementById("year");
+			if (el) {
+				el.textContent = String(new Date().getFullYear());
+			}
+		} catch (error) {
+			console.error("Gagal mendapatkan data Tahun:", error);
+		}
 	</script>
 
 	{/* ===========================================================================
