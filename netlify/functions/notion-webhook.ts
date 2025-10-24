@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
+import { refreshNotionCacheForPage } from "../../src/lib/notion";
 
-const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
-const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
 const notionSigningSecret = process.env.NOTION_SIGNING_SECRET;
 
 function unauthorized(message: string) {
@@ -10,27 +9,6 @@ function unauthorized(message: string) {
 
 function badRequest(message: string) {
   return new Response(message, { status: 400 });
-}
-
-async function writeRedis(command: string, ...args: string[]) {
-  if (!redisUrl || !redisToken) {
-    throw new Error("Redis credentials not configured");
-  }
-
-  const segments = [command, ...args.map((value) => encodeURIComponent(value))];
-  const url = `${redisUrl}/${segments.join("/")}`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${redisToken}`,
-    },
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Redis command failed: ${response.status} ${text}`);
-  }
 }
 
 function verifyNotionSignature(headers: Headers, body: string) {
@@ -104,10 +82,6 @@ export default async function handler(request: Request): Promise<Response> {
     );
   }
 
-  if (!redisUrl || !redisToken) {
-    return badRequest("Redis integration not configured");
-  }
-
   const events = Array.isArray(payload.events) ? payload.events : [];
   const pageIds = new Set<string>();
 
@@ -130,18 +104,13 @@ export default async function handler(request: Request): Promise<Response> {
     });
   }
 
-  const timestamp = new Date().toISOString();
-
   try {
     await Promise.all(
-      Array.from(pageIds).map(async (pageId) => {
-        await writeRedis("sadd", "notion:updated", pageId);
-        await writeRedis("set", `notion:updated:timestamp:${pageId}`, timestamp);
-      }),
+      Array.from(pageIds).map(async (pageId) => refreshNotionCacheForPage(pageId)),
     );
   } catch (error) {
-    console.error("Failed to record updates", error);
-    return new Response("Failed to persist updates", { status: 500 });
+    console.error("Failed to refresh Notion cache", error);
+    return new Response("Failed to refresh cache", { status: 500 });
   }
 
   return new Response(

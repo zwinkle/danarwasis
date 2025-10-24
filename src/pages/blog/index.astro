@@ -1,10 +1,15 @@
 ---
-import { getNotionPosts, type NotionPostSummary } from "../../lib/notion";
+import {
+	getNotionPosts,
+	type NotionPostSummary,
+	getNotionContentVersion,
+} from "../../lib/notion";
 import DefautLayout from "../../layouts/Layout.astro";
 
 export const prerender = false;
 
 const posts = await getNotionPosts();
+const contentVersion = await getNotionContentVersion();
 
 const postsByYear = posts.reduce<Record<number, NotionPostSummary[]>>((groups, post) => {
 	if (!post.createdAt) {
@@ -74,4 +79,38 @@ const postsByYear = posts.reduce<Record<number, NotionPostSummary[]>>((groups, p
 				))
 		}
 	</div>
+	<script is:inline define:vars={{ initialVersion: contentVersion ?? null }}>
+		(() => {
+			let currentVersion = initialVersion;
+			const intervalMs = 15000;
+
+			async function checkForUpdates() {
+				try {
+					const response = await fetch("/api/notion/updates.json", {
+						cache: "no-store",
+						headers: { "Cache-Control": "no-store" },
+					});
+					if (!response.ok) {
+						return;
+					}
+					const data = await response.json();
+					const nextVersion = data?.updatedAt ?? null;
+					if (!nextVersion) {
+						return;
+					}
+					if (!currentVersion) {
+						currentVersion = nextVersion;
+						return;
+					}
+					if (currentVersion !== nextVersion) {
+						window.location.reload();
+					}
+				} catch (error) {
+					console.debug("notion update poll failed", error);
+				}
+			}
+
+			setInterval(checkForUpdates, intervalMs);
+		})();
+	</script>
 </DefautLayout>
