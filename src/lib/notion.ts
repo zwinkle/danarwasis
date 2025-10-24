@@ -1,7 +1,25 @@
-import { Client, isFullPage } from "@notionhq/client";
+import {
+  Client,
+  isFullBlock,
+  isFullPage,
+  iteratePaginatedAPI,
+} from "@notionhq/client";
+import type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoints";
+import type { MarkdownHeading } from "astro";
+import {
+  toc as rehypeToc,
+  type HtmlElementNode,
+  type ListNode,
+  type TextNode,
+} from "@jsdevtools/rehype-toc";
 import rehypeExternalLinks from "rehype-external-links";
+import rehypeKatex from "rehype-katex";
 import rehypeShiki from "@shikijs/rehype";
-import { buildProcessor, NotionPageRenderer } from "notion-astro-loader";
+import rehypeSlug from "rehype-slug";
+import rehypeStringify from "rehype-stringify";
+import notionRehype from "notion-rehype-k";
+import { unified, type Plugin } from "unified";
+import { fileToImageAsset, fileToUrl } from "notion-astro-loader";
 
 type Logger = {
   info: (...args: unknown[]) => void;
@@ -69,6 +87,194 @@ function setCachedValue<T>(key: string, value: T, ttlMs: number) {
     value,
     expiresAt: Date.now() + ttlMs,
   });
+}
+
+type FileObject = Parameters<typeof fileToImageAsset>[0];
+type RehypePlugin = Plugin<any[], any>;
+
+function createBaseProcessor() {
+  const processor = unified();
+  (processor as any)
+    .use(notionRehype, {})
+    .use(rehypeSlug)
+    .use(rehypeKatex)
+    .use(rehypeStringify);
+  return processor as any;
+}
+
+function buildProcessor(
+  rehypePlugins: Promise<ReadonlyArray<readonly [RehypePlugin, any]>>,
+) {
+  let headings: MarkdownHeading[] = [];
+
+  const processorWithToc = (createBaseProcessor() as any).use(rehypeToc, {
+    customizeTOC(toc: HtmlElementNode) {
+      headings = extractTocHeadings(toc);
+      return false;
+    },
+  });
+
+  const processorPromise = rehypePlugins.then((plugins) => {
+    let processor = processorWithToc as any;
+    for (const [plugin, options] of plugins) {
+      processor = processor.use(plugin as any, options);
+    }
+    return processor;
+  });
+
+  return async function process(blocks: unknown[]) {
+    const processor = await processorPromise;
+    const vFile = await processor.process({ data: blocks } as Record<
+      string,
+      unknown
+    >);
+    return { vFile, headings };
+  };
+}
+
+async function awaitAll<T>(iterable: AsyncIterable<T>) {
+  const result: T[] = [];
+  for await (const item of iterable) {
+    result.push(item);
+  }
+  return result;
+}
+
+async function* listBlocks(
+  client: Client,
+  blockId: string,
+  fetchImage: (file: FileObject) => Promise<string>,
+) {
+  for await (const block of iteratePaginatedAPI(
+    client.blocks.children.list,
+    {
+      block_id: blockId,
+    },
+  )) {
+    if (!isFullBlock(block)) {
+      continue;
+    }
+
+    if (block.has_children) {
+      const children = await awaitAll(
+        listBlocks(client, block.id, fetchImage),
+      );
+      // @ts-ignore – notion-rehype-k expects children here
+      block[block.type].children = children;
+    }
+
+    if (block.type === "image") {
+      const url = await fetchImage(block.image as FileObject);
+      yield {
+        ...block,
+        image: {
+          type: block.image.type,
+          [block.image.type]: url,
+          caption: block.image.caption,
+        },
+      } as unknown as typeof block;
+    } else {
+      yield block;
+    }
+  }
+}
+
+function extractTocHeadings(toc: HtmlElementNode): MarkdownHeading[] {
+  if (toc.tagName !== "nav") {
+    throw new Error(`Expected nav, got ${toc.tagName}`);
+  }
+
+  function listElementToTree(ol: ListNode, depth: number): MarkdownHeading[] {
+    return ol.children.flatMap((li) => {
+      const [linkNode, subList] = li.children;
+      const link = linkNode as HtmlElementNode;
+
+      const currentHeading: MarkdownHeading = {
+        depth,
+        text: (link.children![0] as TextNode).value,
+        slug: link.properties.href!.slice(1),
+      };
+
+      let headingsList = [currentHeading];
+      if (subList) {
+        headingsList = headingsList.concat(
+          listElementToTree(subList as ListNode, depth + 1),
+        );
+      }
+      return headingsList;
+    });
+  }
+
+  return listElementToTree(toc.children![0] as ListNode, 0);
+}
+
+interface RenderedNotionEntry {
+  html: string;
+  metadata: {
+    imagePaths: string[];
+    headings: MarkdownHeading[];
+  };
+}
+
+class NotionPageRenderer {
+  #imagePaths: string[] = [];
+  #logger: Logger;
+
+  constructor(
+    private readonly client: Client,
+    private readonly page: PageObjectResponse,
+    parentLogger: Logger,
+  ) {
+    this.#logger = parentLogger.fork(`page ${page.id}`);
+  }
+
+  async render(
+    process: ReturnType<typeof buildProcessor>,
+  ): Promise<RenderedNotionEntry | undefined> {
+    this.#logger.debug("Rendering");
+    try {
+      const blocks = await awaitAll(
+        listBlocks(this.client, this.page.id, this.#fetchImage),
+      );
+
+      const { vFile, headings } = await process(blocks);
+
+      this.#logger.debug("Rendered");
+      return {
+        html: vFile.toString(),
+        metadata: {
+          headings,
+          imagePaths: this.#imagePaths,
+        },
+      };
+    } catch (error) {
+      this.#logger.error(`Failed to render: ${getErrorMessage(error)}`);
+      return undefined;
+    }
+  }
+
+  #fetchImage = async (imageFileObject: FileObject) => {
+    try {
+      const fetchedImageData = await fileToImageAsset(imageFileObject);
+      this.#imagePaths.push(fetchedImageData.src);
+      return fetchedImageData.src;
+    } catch (error) {
+      this.#logger.error(
+        `Failed to fetch image when rendering page: ${getErrorMessage(error)}`,
+      );
+      return fileToUrl(imageFileObject) ?? "";
+    }
+  };
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  return "Unknown error";
 }
 
 const processNotionContent = buildProcessor(
