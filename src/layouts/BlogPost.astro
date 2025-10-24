@@ -30,7 +30,7 @@ const { title, description, pubDate, thumbnail, headings, caption } = Astro.prop
 								<picture>
 									<img src={thumbnail} alt={"Thumbnail for " + title} class="rounded-lg mt-8 shimmer aspect-video w-full h-auto" />
 								</picture>
-								{caption && <figcaption class="text-xs mt-2 text-gray-500 dark:text-gray-400">Image: {caption}</figcaption>}
+								{caption && <figcaption class="text-xs mt-2 text-gray-500 dark:text-gray-400">Gambar: {caption}</figcaption>}
 							</figure>
 						)
 					}
@@ -73,7 +73,7 @@ const { title, description, pubDate, thumbnail, headings, caption } = Astro.prop
 				</nav>
 				<details
 					class="group top-32 right-8 flex-col z-99 block bg-l-on-base/10 dark:bg-d-on-base/10 md:hidden p-4 rounded-md">
-					<summary class="relative flex items-center gap-1"><i  class="i-myna-list w-5 h-5"></i> Table of Contents</summary>
+					<summary class="relative flex items-center gap-1"><i  class="i-myna-list w-5 h-5"></i> Tabel Konten</summary>
 					<nav class="relative grid gap-1 mt-4">
 						<a href={`#${title.replace(/\s+/g, "-").toLowerCase()}`} class="decoration-none">{title.trim()}</a>
 						{
