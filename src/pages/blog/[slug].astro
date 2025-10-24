@@ -1,23 +1,24 @@
 ---
-import { getCollection } from "astro:content";
 import BlogPost from "../../layouts/BlogPost.astro";
-import { render } from "astro:content";
 import type { MarkdownHeading } from "astro";
+import { getNotionPost, getNotionPosts } from "../../lib/notion";
 
 export const prerender = false;
 
-const posts = await getCollection("blog");
+const posts = await getNotionPosts();
 const numOfPost = posts.length;
 const params = Astro.params.slug;
-const post = posts.find((post: any) => post.data.properties.slug === params);
-
-const postIndex = posts.findIndex((post: any) => post.data.properties.slug === params);
+const postIndex = posts.findIndex((post) => post.slug === params);
+const postDetail = params ? await getNotionPost(params) : null;
 
 function getAtIndex(index: number) {
-	return {
-		title: posts[index].data.properties.Name,
-		slug: posts[index].data.properties.slug,
-	};
+	const target = posts[index];
+	return target
+		? {
+			title: target.title,
+			slug: target.slug,
+		}
+		: null;
 }
 
 function getExcerpt(html: string, sentences = 1): string {
@@ -33,21 +34,21 @@ function getExcerpt(html: string, sentences = 1): string {
 	return excerpt.trim();
 }
 
-if (!post || !post.rendered) {
+if (!postDetail || postIndex === -1) {
 	return Astro.rewrite("/404");
 }
 
 const pageData = {
 	post: {
-		html: post.rendered.html,
-		thumbnail: post.data.properties.thumbnail,
-		title: post.data.properties.Name,
-		slug: post.data.properties.slug,
-		description: getExcerpt(post.rendered.html, 1),
-		pubDate: new Date(post.data.properties.created_at.date?.start || new Date()),
-		headings: post.rendered.metadata?.headings,
-		credit: post.data.properties.credit,
-		tags: post.data.properties.tags,
+		html: postDetail.html,
+		thumbnail: postDetail.thumbnail,
+		title: postDetail.title,
+		slug: postDetail.slug,
+		description: getExcerpt(postDetail.html, 1),
+		pubDate: new Date(postDetail.createdAt ?? new Date()),
+		headings: postDetail.headings,
+		credit: postDetail.credit,
+		tags: postDetail.tags,
 	},
 	numOfPost,
 	params,
@@ -57,9 +58,8 @@ const prevPost = getAtIndex(postIndex);
 const nextPost = getAtIndex(postIndex);
 // const prevPost = postIndex > 0 ? getAtIndex(postIndex - 1) : null;
 // const nextPost = postIndex < numOfPost - 1 ? getAtIndex(postIndex + 1) : null;
-
-const { Content } = await render(post);
 ---
+
 
 <BlogPost
 	title={pageData.post.title}
@@ -68,7 +68,7 @@ const { Content } = await render(post);
 	description={pageData.post.description}
 	caption={pageData.post.credit}
 	headings={pageData.post.headings as MarkdownHeading[]}>
-	<Content />
+	<section set:html={pageData.post.html} />
 	
 	<div class="grid gap-2">
 		<div>

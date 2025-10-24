@@ -1,6 +1,6 @@
 import { SITE_DESCRIPTION, SITE_TITLE } from "../consts";
 
-import { getCollection } from "astro:content";
+import { getNotionPosts, getNotionPost, type NotionPostSummary, type NotionPostDetail } from "../lib/notion";
 import rss from "@astrojs/rss";
 
 export const prerender = false;
@@ -19,24 +19,31 @@ export async function GET(context) {
     return excerpt.trim();
   }
 
-  const posts = await getCollection("blog");
-
-  return rss(
-    {
-      title: SITE_TITLE,
-      description: SITE_DESCRIPTION,
-      site: context.site,
-      customData: '<language>en-us</language>',
-      items: posts.map((post) => ({
-        categories: post.data.properties.tags,
-        author: 'Andika',
-        link: `/blog/${post.data.properties.slug}/`,
-        title: post.data.properties.Name || '=--',
-        pubDate: new Date(post.data.properties.created_at.date.start),
-        description: getExcerpt(post.rendered.html || ''),
-        content: post.rendered.html,
-      })),
-    }
-
+  const summaries = await getNotionPosts();
+  const posts = await Promise.all(
+    summaries.map(async (summary) => {
+      const detail = await getNotionPost(summary.slug);
+      return detail ? { summary, detail } : null;
+    })
   );
+
+  const items = posts
+    .filter((item): item is { summary: NotionPostSummary; detail: NotionPostDetail } => item !== null)
+    .map(({ summary, detail }) => ({
+      categories: summary.tags,
+      author: "Andika",
+      link: `/blog/${summary.slug}/`,
+      title: summary.title || "=--",
+      pubDate: summary.createdAt ? new Date(summary.createdAt) : new Date(),
+      description: getExcerpt(detail.html || ""),
+      content: detail.html,
+    }));
+
+  return rss({
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    site: context.site,
+    customData: "<language>en-us</language>",
+    items,
+  });
 }

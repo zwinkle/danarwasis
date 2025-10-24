@@ -1,41 +1,12 @@
 ---
-import { getCollection, type CollectionEntry } from "astro:content";
 import DefautLayout from "../../../layouts/Layout.astro";
+import { getNotionPosts, type NotionPostSummary } from "../../../lib/notion";
 
 export const prerender = false;
 
-type NormalizedPost = {
-	entry: CollectionEntry<"blog">;
-	tags: string[];
-	title: string;
-	slug: string;
+type TaggedPost = NotionPostSummary & {
 	publishedAt: Date | null;
 	isIdLang?: boolean;
-};
-
-const normalizeTags = (raw: unknown): string[] => {
-	if (!raw) return [];
-	if (Array.isArray(raw)) {
-		return raw
-			.map((value) => {
-				if (typeof value === "string") return value;
-				if (value && typeof value === "object") {
-					if ("name" in value && typeof (value as { name?: unknown }).name === "string") {
-						return (value as { name: string }).name;
-					}
-					if ("plain_text" in value && typeof (value as { plain_text?: unknown }).plain_text === "string") {
-						return (value as { plain_text: string }).plain_text;
-					}
-					if ("value" in value && typeof (value as { value?: unknown }).value === "string") {
-						return (value as { value: string }).value;
-					}
-				}
-				return null;
-			})
-			.filter((tag): tag is string => Boolean(tag && tag.trim()))
-			.map((tag) => tag.trim());
-	}
-	return [];
 };
 
 const rawTag = Astro.params.slug;
@@ -47,48 +18,14 @@ if (!rawTag) {
 const tag = decodeURIComponent(rawTag);
 const normalizedTag = tag.toLowerCase();
 
-const posts = (await getCollection("blog"))
-	.map<NormalizedPost>((entry) => {
-		const notionProps = (entry.data as any)?.properties;
-		const tags = normalizeTags((entry.data as any)?.tags ?? notionProps?.tags ?? []);
-
-		const notionDate = notionProps?.created_at?.date?.start;
-		const publishedAt = (() => {
-			if (typeof notionDate === "string") {
-				const parsed = new Date(notionDate);
-				if (!Number.isNaN(parsed.getTime())) {
-					return parsed;
-				}
-			}
-			return null;
-		})();
-
-		const rawTitle =
-			(typeof notionProps?.Name === "string" && notionProps.Name.trim().length > 0
-				? notionProps.Name.trim()
-				: undefined);
-		const slugify = (s: string) =>
-			s
-				.toLowerCase()
-				.trim()
-				.replace(/\s+/g, "-")
-				.replace(/[^a-z0-9\-]/g, "")
-				.replace(/\-+/g, "-")
-				.replace(/^\-|\-$/g, "");
-		const fallbackFromId = entry.id.replace(/^.*\//, "").replace(/\.md$/i, "");
-		const notionSlug = typeof notionProps?.slug === "string" && notionProps.slug.trim().length > 0 ? notionProps.slug.trim() : undefined;
-		const dataSlug = typeof (entry as any)?.data?.slug === "string" && (entry as any).data.slug.trim().length > 0 ? (entry as any).data.slug.trim() : undefined;
-		const slug = notionSlug ?? dataSlug ?? (rawTitle ? slugify(rawTitle) : slugify(fallbackFromId));
-		const title = rawTitle ?? slug.replace(/-/g, " ");
-
-		const isIdLang = tags.some((t) => t.toLowerCase() === "id");
+const posts = (await getNotionPosts())
+	.map<TaggedPost>((post) => {
+		const publishedAt = post.createdAt ? new Date(post.createdAt) : null;
+		const isIdLang = post.tags.some((tagName) => tagName.toLowerCase() === "id");
 
 		return {
-			entry,
-			tags,
-			title,
-			slug,
-			publishedAt,
+			...post,
+			publishedAt: publishedAt && !Number.isNaN(publishedAt.getTime()) ? publishedAt : null,
 			isIdLang,
 		};
 	})
@@ -100,7 +37,7 @@ const displayTag =
 		(postTag) => postTag.toLowerCase() === normalizedTag
 	) ?? tag;
 
-const postsByYear = posts.reduce<Record<number, NormalizedPost[]>>((acc, post) => {
+const postsByYear = posts.reduce<Record<number, TaggedPost[]>>((acc, post) => {
 	const year = (post.publishedAt ?? new Date()).getFullYear();
 	if (!acc[year]) acc[year] = [];
 	acc[year].push(post);
@@ -122,14 +59,14 @@ const postsByYear = posts.reduce<Record<number, NormalizedPost[]>>((acc, post) =
 		{
 			Object.entries(postsByYear)
 				.sort(([a], [b]) => parseInt(b) - parseInt(a))
-				.map(([year, yearPosts]: [string, NormalizedPost[]], yearIndex: number) => (
-					<div class=" my-12 relative">
+				.map(([year, yearPosts]: [string, TaggedPost[]], yearIndex: number) => (
+					<div class="my-12 relative">
 						<div
-							class=" text-2xl font-bold absolute -z-50 font-lexend text-9xl -top-12 -left-12 opacity-10 text-stroke dark:(text-d-base) text-l-base "
-						style={`--enter-stage: ${yearIndex + yearPosts.length + 2} !important;`}>
+							class="text-2xl font-bold absolute -z-50 font-lexend text-9xl -top-12 -left-12 opacity-10 text-stroke dark:(text-d-base) text-l-base"
+							style={`--enter-stage: ${yearIndex + yearPosts.length + 2} !important;`}>
 							{year}
 						</div>
-						<ul class=" mt-4 z-50 gap-4 grid slide-enter-content">
+						<ul class="mt-4 z-50 gap-4 grid slide-enter-content">
 						{yearPosts
 							.slice()
 							.sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0))
@@ -146,16 +83,16 @@ const postsByYear = posts.reduce<Record<number, NormalizedPost[]>>((acc, post) =
 										<a
 											href={`/blog/${post.slug}`}
 											class="inline-block duration-200 transition-all transform inline-flex items-end gap-4 opacity-90 hover:opacity-100">
-											<p>
-												{post.title}
-												{post.publishedAt && (
-													<span class=" text-xs text-gray-500 inline-block">
-														{post.publishedAt.toLocaleDateString("en-US", {
-															day: "2-digit",
-															month: "long",
-														})}
-													</span>
-												)}
+										<p>
+											{post.title}
+											{post.publishedAt && (
+												<span class="text-xs text-gray-500 inline-block">
+													{post.publishedAt.toLocaleDateString("en-US", {
+														day: "2-digit",
+														month: "long",
+													})}
+												</span>
+											)}
 											</p>
 										</a>
 									</li>
