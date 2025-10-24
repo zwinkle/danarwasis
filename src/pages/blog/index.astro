@@ -20,6 +20,7 @@ const postsByYear = posts.reduce<Record<number, NotionPostSummary[]>>((groups, p
 	groups[year].push(post);
 	return groups;
 }, {});
+const serializedPosts = JSON.stringify(posts).replace(/</g, "\\u003c");
 ---
 
 <DefautLayout
@@ -33,17 +34,18 @@ const postsByYear = posts.reduce<Record<number, NotionPostSummary[]>>((groups, p
 		<p>
 			Sekilas kisah kehidupan saya sebagai Mahasiswa (untuk sekarang ini, besok tidak tahu)
 		</p>
-		{
-			Object.entries(postsByYear)
-				.sort(([a], [b]) => parseInt(b) - parseInt(a))
-				.map(([year, yearlyPosts], yearIndex) => (
-					<div class="my-12 relative">
+		<div data-blog-list>
+			{
+				Object.entries(postsByYear)
+					.sort(([a], [b]) => parseInt(b) - parseInt(a))
+					.map(([year, yearlyPosts], yearIndex) => (
+						<div class="my-12 relative">
 						<div
 							class="text-2xl font-bold absolute -z-50 font-lexend text-9xl -top-12 -left-12 opacity-10 text-stroke dark:(text-d-base) text-l-base"
 							style={`--enter-stage: ${yearIndex + yearlyPosts.length + 2} !important;`}>
 							{year}
 						</div>
-					<ul class="mt-4 z-50 gap-4 grid slide-enter-content">
+						<ul class="mt-4 z-50 gap-4 grid slide-enter-content">
 						{yearlyPosts
 							.sort((a, b) => {
 								const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -72,8 +74,178 @@ const postsByYear = posts.reduce<Record<number, NotionPostSummary[]>>((groups, p
 									</li>
 								))}
 						</ul>
-					</div>
-				))
-		}
+						</div>
+					))
+			}
+		</div>
 	</div>
+	<script type="application/json" data-blog-posts set:html={serializedPosts} is:inline></script>
+	<script type="module" is:inline>
+		const postsContainer = document.querySelector("[data-blog-list]");
+		const postsDataScript = document.querySelector("script[data-blog-posts]");
+		if (!postsContainer || !postsDataScript) {
+			console.warn("Blog auto-refresh: missing container or data script");
+		} else {
+			let currentPosts = [];
+			try {
+				const raw = postsDataScript.textContent?.trim() ?? "[]";
+				currentPosts = normalizePosts(JSON.parse(raw));
+			} catch (error) {
+				console.error("Blog auto-refresh: failed to parse initial posts", error);
+			}
+
+			let currentSignature = createSignature(currentPosts);
+			renderPosts(currentPosts);
+
+			const REFRESH_INTERVAL = 60_000;
+
+			async function fetchLatestPosts() {
+				try {
+					const response = await fetch("/api/blog/posts.json", {
+						headers: { Accept: "application/json" },
+						cache: "no-store",
+					});
+					if (!response.ok) {
+						return;
+					}
+					const data = await response.json();
+					const latestPosts = normalizePosts(data?.posts);
+					const signature = createSignature(latestPosts);
+					if (signature !== currentSignature) {
+						currentPosts = latestPosts;
+						currentSignature = signature;
+						renderPosts(currentPosts);
+					}
+				} catch (error) {
+					const isAbortError =
+						error instanceof DOMException ? error.name === "AbortError" : false;
+					if (!isAbortError) {
+						console.error("Blog auto-refresh: failed to fetch latest posts", error);
+					}
+				}
+			}
+
+			function renderPosts(posts) {
+				const grouped = posts.reduce((map, post) => {
+					if (!post || !post.createdAt) {
+						return map;
+					}
+					const year = new Date(post.createdAt).getFullYear();
+					const existing = map.get(year);
+					if (existing) {
+						existing.push(post);
+					} else {
+						map.set(year, [post]);
+					}
+					return map;
+				}, new Map());
+
+				const years = Array.from(grouped.entries()).sort((a, b) => b[0] - a[0]);
+				postsContainer.innerHTML = years
+					.map(([year, yearlyPosts], yearIndex) => {
+						const sortedPosts = [...yearlyPosts].sort((a, b) => {
+							const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+							const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+							return dateB - dateA;
+						});
+
+						const items = sortedPosts
+							.map((post, postIndex) => {
+								const enterStagePrefix = yearIndex > 0 ? String(yearIndex) : "";
+								const dateLabel = formatDate(post.createdAt);
+								return `
+									<li class="mt-2 relative" style="--enter-stage: ${enterStagePrefix}${postIndex + 2} !important;">
+										<a href="/blog/${post.slug}" class="inline-block duration-200 transition-all transform inline-flex items-end gap-4 opacity-90 hover:opacity-100">
+											<p>
+												${escapeHtml(post.title)}
+												<span class="text-xs text-gray-500 inline-block">${escapeHtml(dateLabel)}</span>
+											</p>
+										</a>
+									</li>`;
+							})
+							.join("");
+
+						return `
+							<div class="my-12 relative">
+								<div class="text-2xl font-bold absolute -z-50 font-lexend text-9xl -top-12 -left-12 opacity-10 text-stroke dark:(text-d-base) text-l-base" style="--enter-stage: ${yearIndex + sortedPosts.length + 2} !important;">${year}</div>
+								<ul class="mt-4 z-50 gap-4 grid slide-enter-content">${items}</ul>
+							</div>`;
+					})
+					.join("");
+			}
+
+			function formatDate(createdAt) {
+				if (!createdAt) {
+					return "";
+				}
+				const date = new Date(createdAt);
+				if (Number.isNaN(date.getTime())) {
+					return "";
+				}
+				return date.toLocaleDateString("en-US", {
+					day: "2-digit",
+					month: "long",
+				});
+			}
+
+			function escapeHtml(value) {
+				if (!value) {
+					return "";
+				}
+				return String(value)
+					.replace(/&/g, "&amp;")
+					.replace(/</g, "&lt;")
+					.replace(/>/g, "&gt;")
+					.replace(/"/g, "&quot;")
+					.replace(/'/g, "&#39;");
+			}
+
+			function createSignature(posts) {
+				return JSON.stringify(
+					[...posts]
+						.map((post) => ({
+							id: post.id ?? "",
+							slug: post.slug ?? "",
+							title: post.title ?? "",
+							createdAt: post.createdAt ?? null,
+							updatedAt: post.updatedAt ?? null,
+						}))
+						.sort((a, b) => a.slug.localeCompare(b.slug)),
+				);
+			}
+
+			function normalizePosts(raw) {
+				if (!Array.isArray(raw)) {
+					return [];
+				}
+				return raw
+					.filter((item) => item && typeof item === "object")
+					.map((item) => ({
+						id: typeof item.id === "string" ? item.id : "",
+						slug: typeof item.slug === "string" ? item.slug : "",
+						title: typeof item.title === "string" ? item.title : "",
+						createdAt: typeof item.createdAt === "string" ? item.createdAt : null,
+						updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : null,
+					}))
+					.filter((post) => post.slug && post.title);
+			}
+
+			function scheduleRefresh() {
+				fetchLatestPosts();
+				setInterval(() => {
+					if (!document.hidden) {
+						fetchLatestPosts();
+					}
+				}, REFRESH_INTERVAL);
+			}
+
+			document.addEventListener("visibilitychange", () => {
+				if (!document.hidden) {
+					fetchLatestPosts();
+				}
+			});
+
+			scheduleRefresh();
+		}
+	</script>
 </DefautLayout>
