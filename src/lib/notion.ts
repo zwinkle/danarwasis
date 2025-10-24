@@ -394,6 +394,29 @@ export async function invalidateNotionCacheForPage(pageId: string): Promise<void
   await removeCachedPostById(pageId);
 }
 
+export async function rebuildNotionCache(): Promise<void> {
+  const summaries = await fetchNotionPostsFromApi();
+
+  if (!redis) {
+    return;
+  }
+
+  await redisSet(POSTS_CACHE_KEY, summaries);
+  await Promise.all(
+    summaries.map((summary) => redisSet(getPageSlugKey(summary.id), summary.slug)),
+  );
+  await markContentUpdated();
+
+  await Promise.all(
+    summaries.map(async (summary) => {
+      const detail = await fetchNotionPostFromApi(summary.slug);
+      if (!detail) {
+        await removeCachedPostById(summary.id);
+      }
+    }),
+  );
+}
+
 function cloneSummary(summary: NotionPostSummary): NotionPostSummary {
   return {
     ...summary,
