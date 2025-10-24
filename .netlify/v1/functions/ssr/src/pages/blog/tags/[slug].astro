@@ -1,0 +1,105 @@
+---
+import DefautLayout from "../../../layouts/Layout.astro";
+import { getNotionPosts, type NotionPostSummary } from "../../../lib/notion";
+
+export const prerender = false;
+
+type TaggedPost = NotionPostSummary & {
+	publishedAt: Date | null;
+	isIdLang?: boolean;
+};
+
+const rawTag = Astro.params.slug;
+
+if (!rawTag) {
+	return Astro.rewrite("/404");
+}
+
+const tag = decodeURIComponent(rawTag);
+const normalizedTag = tag.toLowerCase();
+
+const posts = (await getNotionPosts())
+	.map<TaggedPost>((post) => {
+		const publishedAt = post.createdAt ? new Date(post.createdAt) : null;
+		const isIdLang = post.tags.some((tagName) => tagName.toLowerCase() === "id");
+
+		return {
+			...post,
+			publishedAt: publishedAt && !Number.isNaN(publishedAt.getTime()) ? publishedAt : null,
+			isIdLang,
+		};
+	})
+	.filter((post) => post.tags.some((postTag) => postTag.toLowerCase() === normalizedTag))
+	.sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0));
+
+const displayTag =
+	posts.find((post) => post.tags.some((postTag) => postTag.toLowerCase() === normalizedTag))?.tags.find(
+		(postTag) => postTag.toLowerCase() === normalizedTag
+	) ?? tag;
+
+const postsByYear = posts.reduce<Record<number, TaggedPost[]>>((acc, post) => {
+	const year = (post.publishedAt ?? new Date()).getFullYear();
+	if (!acc[year]) acc[year] = [];
+	acc[year].push(post);
+	return acc;
+}, {});
+---
+
+<DefautLayout
+	title="Zwinkle Blog, sekilas kehidupan"
+	description="Sekilas kisah kehidupan saya sebagai Mahasiswa (untuk sekarang ini, besok tidak tahu)">
+	<div class="grid gap-6 mt-32 max-w-3xl mx-auto px-12 mb-20 slide-enter-content">
+		<h1>
+			<span class="text-3xl lg:text-4xl font-bold font-lexend capitalize">{displayTag}</span>
+		</h1>
+		<p>
+			Disini {posts.length}
+			{posts.length === 1 ? "postingan" : "postingan"} menggunakan tag "{displayTag}".
+		</p>
+		{
+			Object.entries(postsByYear)
+				.sort(([a], [b]) => parseInt(b) - parseInt(a))
+				.map(([year, yearPosts]: [string, TaggedPost[]], yearIndex: number) => (
+					<div class="my-12 relative">
+						<div
+							class="text-2xl font-bold absolute -z-50 font-lexend text-9xl -top-12 -left-12 opacity-10 text-stroke dark:(text-d-base) text-l-base"
+							style={`--enter-stage: ${yearIndex + yearPosts.length + 2} !important;`}>
+							{year}
+						</div>
+						<ul class="mt-4 z-50 gap-4 grid slide-enter-content">
+						{yearPosts
+							.slice()
+							.sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0))
+							.map((post, postIndex: number) => (
+									<li
+										class:list={[
+											"mt-2 relative",
+										{
+											"before:(content-['ID'] absolute -left-10 bg-#5551 text-#888 bg-opacity-25 px-2 py-1 text-xs rounded-md) lang-id":
+												post.isIdLang,
+										},
+										]}
+										style={`--enter-stage: ${yearIndex > 0 ? yearIndex : ""}${postIndex + 2} !important;`}>
+										<a
+											href={`/blog/${post.slug}`}
+											class="inline-block duration-200 transition-all transform inline-flex items-end gap-4 opacity-90 hover:opacity-100">
+										<p>
+											{post.title}
+											{post.publishedAt && (
+												<span class="text-xs text-gray-500 inline-block">
+													{post.publishedAt.toLocaleDateString("en-US", {
+														day: "2-digit",
+														month: "long",
+													})}
+												</span>
+											)}
+											</p>
+										</a>
+									</li>
+								))}
+						</ul>
+					</div>
+				))
+		}
+	</div>
+</DefautLayout>
