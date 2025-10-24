@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
 
+import { rebuildNotionCache } from "../../src/lib/notion";
+
 const notionSigningSecret = process.env.NOTION_SIGNING_SECRET;
 const notionDatabaseId = process.env.NOTION_BD_ID;
 const notionRevalidateToken =
@@ -110,19 +112,44 @@ export default async function handler(request: Request): Promise<Response> {
     });
   }
 
-  const endpoint = resolveRefreshEndpoint();
-  if (!endpoint || !notionRevalidateToken) {
-    return new Response("Refresh endpoint not configured", { status: 500 });
+  try {
+    await rebuildNotionCache();
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : typeof error === "string" ? error : "Failed to rebuild cache";
+    return new Response(message, { status: 500 });
   }
 
-  const refreshResponse = await triggerRefresh(endpoint, notionRevalidateToken);
-  if (!refreshResponse.ok) {
-    const message = await refreshResponse.text().catch(() => "");
-    return new Response(message || "Failed to refresh cache", { status: 502 });
+  const endpoint = resolveRefreshEndpoint();
+  const refreshTriggered = Boolean(endpoint && notionRevalidateToken);
+
+  if (endpoint && notionRevalidateToken) {
+    const refreshResponse = await triggerRefresh(endpoint, notionRevalidateToken);
+    if (!refreshResponse.ok) {
+      const message = await refreshResponse.text().catch(() => "");
+      return new Response(
+        JSON.stringify({
+          status: "refreshed",
+          pages: Array.from(relevantPageIds),
+          redis: "updated",
+          siteRefresh: "failed",
+          message: message || "Refresh endpoint returned non-2xx status",
+        }),
+        {
+          status: 207,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
   }
 
   return new Response(
-    JSON.stringify({ status: "refreshed", pages: Array.from(relevantPageIds) }),
+    JSON.stringify({
+      status: "refreshed",
+      pages: Array.from(relevantPageIds),
+      redis: "updated",
+      siteRefresh: refreshTriggered ? "success" : "skipped",
+    }),
     {
       status: 200,
       headers: { "Content-Type": "application/json" },
