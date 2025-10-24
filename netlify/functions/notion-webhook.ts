@@ -105,7 +105,12 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   try {
-    await Promise.all(Array.from(pageIds).map(triggerRevalidation));
+    await Promise.all(
+      Array.from(pageIds).map(async (pageId) => {
+        console.log("Triggering revalidation", { pageId });
+        await triggerRevalidation(pageId);
+      }),
+    );
   } catch (error) {
     console.error("Failed to trigger cache refresh", error);
     return new Response("Failed to refresh cache", { status: 500 });
@@ -121,15 +126,13 @@ export default async function handler(request: Request): Promise<Response> {
 }
 
 async function triggerRevalidation(pageId: string) {
-  const baseUrl = process.env.URL ?? process.env.DEPLOY_URL ?? process.env.DEPLOY_PRIME_URL;
-  if (!baseUrl) {
-    throw new Error("Missing base URL for revalidation");
-  }
   if (!revalidateToken) {
     throw new Error("Missing NOTION_REVALIDATE_TOKEN");
   }
 
+  const baseUrl = resolveBaseUrl();
   const url = new URL("/api/notion/revalidate.json", baseUrl).toString();
+
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -142,5 +145,35 @@ async function triggerRevalidation(pageId: string) {
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     throw new Error(`Revalidate failed (${response.status}): ${text}`);
+  }
+
+  console.log("Revalidation success", { pageId });
+}
+
+function resolveBaseUrl(): string {
+  const candidates = [
+    process.env.SITE_URL,
+    process.env.URL,
+    process.env.DEPLOY_URL,
+    process.env.DEPLOY_PRIME_URL,
+  ].filter((value): value is string => Boolean(value));
+
+  if (candidates.length > 0) {
+    return normalizeUrl(candidates[0]);
+  }
+
+  if (process.env.NETLIFY_SITE_NAME) {
+    return `https://${process.env.NETLIFY_SITE_NAME}.netlify.app`;
+  }
+
+  throw new Error("Missing base URL environment variable");
+}
+
+function normalizeUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    return url.origin;
+  } catch {
+    return `https://${value.replace(/^https?:\/\//, "")}`;
   }
 }

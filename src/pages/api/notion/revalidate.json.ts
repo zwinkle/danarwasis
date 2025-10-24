@@ -32,7 +32,9 @@ export async function POST({ request }: { request: Request }) {
   }
 
   try {
+    console.log("Invalidating Notion cache", { pageId });
     await invalidateNotionCacheForPage(pageId);
+    console.log("Invalidation complete", { pageId });
   } catch (error) {
     console.error("Failed to refresh cache for page", pageId, error);
     const message =
