@@ -1,7 +1,13 @@
 import crypto from "node:crypto";
 
 const notionSigningSecret = process.env.NOTION_SIGNING_SECRET;
-const revalidateToken = process.env.NOTION_REVALIDATE_TOKEN ?? notionSigningSecret;
+const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+const POSTS_KEY = "notion:posts";
+const LAST_UPDATED_KEY = "notion:last-updated";
+const PAGE_SLUG_PREFIX = "notion:page-slug:";
+const POST_DETAIL_PREFIX = "notion:post:";
 
 function unauthorized(message: string) {
   return new Response(message, { status: 401 });
@@ -105,14 +111,9 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   try {
-    await Promise.all(
-      Array.from(pageIds).map(async (pageId) => {
-        console.log("Triggering revalidation", { pageId });
-        await triggerRevalidation(pageId);
-      }),
-    );
+    await invalidateCache(Array.from(pageIds));
   } catch (error) {
-    console.error("Failed to trigger cache refresh", error);
+    console.error("Failed to invalidate cache", error);
     return new Response("Failed to refresh cache", { status: 500 });
   }
 
@@ -125,55 +126,94 @@ export default async function handler(request: Request): Promise<Response> {
   );
 }
 
-async function triggerRevalidation(pageId: string) {
-  if (!revalidateToken) {
-    throw new Error("Missing NOTION_REVALIDATE_TOKEN");
+async function invalidateCache(pageIds: string[]) {
+  if (!redisUrl || !redisToken) {
+    console.warn("Redis credentials missing; skipping invalidation");
+    return;
   }
 
-  const baseUrl = resolveBaseUrl();
-  const url = new URL("/api/notion/revalidate.json", baseUrl).toString();
+  const posts = await redisGet(POSTS_KEY);
+  const slugsToDelete = new Set<string>();
 
-  const response = await fetch(url, {
-    method: "POST",
+  if (Array.isArray(posts)) {
+    for (const post of posts) {
+      if (post && typeof post.slug === "string") {
+        slugsToDelete.add(post.slug);
+      }
+    }
+  }
+
+  // Remove detail caches for known slugs
+  await Promise.all(
+    Array.from(slugsToDelete).map((slug) => redisDel(`${POST_DETAIL_PREFIX}${slug}`)),
+  );
+
+  // Remove page-to-slug mappings for affected pages
+  await Promise.all(
+    pageIds.map((pageId) => redisDel(`${PAGE_SLUG_PREFIX}${pageId}`)),
+  );
+
+  await redisDel(POSTS_KEY);
+  await redisSet(LAST_UPDATED_KEY, new Date().toISOString());
+
+  console.log("Cache invalidated", {
+    pages: pageIds,
+    removedPosts: slugsToDelete.size,
+  });
+}
+
+async function redisGet(key: string): Promise<any> {
+  const response = await fetch(`${redisUrl}/get/${encodeURIComponent(key)}`, {
     headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${revalidateToken}`,
+      Authorization: `Bearer ${redisToken}`,
     },
-    body: JSON.stringify({ pageId }),
   });
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(`Revalidate failed (${response.status}): ${text}`);
+    throw new Error(`Redis GET failed (${response.status}): ${text}`);
   }
 
-  console.log("Revalidation success", { pageId });
+  const data = await response.json();
+  const result = data.result ?? null;
+  if (typeof result === "string") {
+    try {
+      return JSON.parse(result);
+    } catch {
+      return result;
+    }
+  }
+  return result;
 }
 
-function resolveBaseUrl(): string {
-  const candidates = [
-    process.env.SITE_URL,
-    process.env.URL,
-    process.env.DEPLOY_URL,
-    process.env.DEPLOY_PRIME_URL,
-  ].filter((value): value is string => Boolean(value));
+async function redisDel(key: string): Promise<void> {
+  const response = await fetch(`${redisUrl}/del/${encodeURIComponent(key)}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${redisToken}`,
+    },
+  });
 
-  if (candidates.length > 0) {
-    return normalizeUrl(candidates[0]);
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Redis DEL failed (${response.status}): ${text}`);
   }
-
-  if (process.env.NETLIFY_SITE_NAME) {
-    return `https://${process.env.NETLIFY_SITE_NAME}.netlify.app`;
-  }
-
-  throw new Error("Missing base URL environment variable");
 }
 
-function normalizeUrl(value: string): string {
-  try {
-    const url = new URL(value);
-    return url.origin;
-  } catch {
-    return `https://${value.replace(/^https?:\/\//, "")}`;
+async function redisSet(key: string, value: string): Promise<void> {
+  const encodedValue = encodeURIComponent(value);
+  const response = await fetch(
+    `${redisUrl}/set/${encodeURIComponent(key)}/${encodedValue}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${redisToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Redis SET failed (${response.status}): ${text}`);
   }
 }
