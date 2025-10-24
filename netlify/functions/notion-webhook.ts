@@ -1,13 +1,9 @@
 import crypto from "node:crypto";
 
-const notionSigningSecret = process.env.NOTION_SIGNING_SECRET;
-const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
-const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+import { rebuildNotionCache } from "../../src/lib/notion";
 
-const POSTS_KEY = "notion:posts";
-const LAST_UPDATED_KEY = "notion:last-updated";
-const PAGE_SLUG_PREFIX = "notion:page-slug:";
-const POST_DETAIL_PREFIX = "notion:post:";
+const notionSigningSecret = process.env.NOTION_SIGNING_SECRET;
+const notionDatabaseId = process.env.NOTION_BD_ID;
 
 function unauthorized(message: string) {
   return new Response(message, { status: 401 });
@@ -43,6 +39,10 @@ function verifyNotionSignature(headers: Headers, body: string) {
 }
 
 export default async function handler(request: Request): Promise<Response> {
+  if (!notionDatabaseId) {
+    return new Response("Notion database not configured", { status: 500 });
+  }
+
   if (request.method === "GET" || request.method === "HEAD") {
     return new Response(
       JSON.stringify({ status: "ready", message: "Notion webhook" }),
@@ -89,36 +89,34 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   const events = Array.isArray(payload.events) ? payload.events : [];
-  const pageIds = new Set<string>();
+  const relevantPageIds = new Set<string>();
 
   for (const eventPayload of events) {
-    const parentPageId = eventPayload?.data?.parent?.page_id ?? eventPayload?.parent?.page_id;
-    if (parentPageId) {
-      pageIds.add(parentPageId);
+    if (!isEventForDatabase(eventPayload, notionDatabaseId)) {
+      continue;
     }
 
-    const directPageId = eventPayload?.data?.id ?? eventPayload?.id;
-    if (directPageId) {
-      pageIds.add(directPageId);
+    const pageId = extractPageId(eventPayload);
+    if (pageId) {
+      relevantPageIds.add(pageId);
     }
   }
 
-  if (!pageIds.size) {
-    return new Response(JSON.stringify({ status: "no-op" }), {
+  if (!relevantPageIds.size) {
+    return new Response(JSON.stringify({ status: "ignored" }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
   }
 
   try {
-    await invalidateCache(Array.from(pageIds));
+    await rebuildNotionCache();
   } catch (error) {
-    console.error("Failed to invalidate cache", error);
     return new Response("Failed to refresh cache", { status: 500 });
   }
 
   return new Response(
-    JSON.stringify({ status: "ok", pages: Array.from(pageIds) }),
+    JSON.stringify({ status: "refreshed", pages: Array.from(relevantPageIds) }),
     {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -126,94 +124,39 @@ export default async function handler(request: Request): Promise<Response> {
   );
 }
 
-async function invalidateCache(pageIds: string[]) {
-  if (!redisUrl || !redisToken) {
-    console.warn("Redis credentials missing; skipping invalidation");
-    return;
+function isEventForDatabase(eventPayload: any, databaseId: string): boolean {
+  const parent = eventPayload?.data?.parent ?? eventPayload?.parent;
+  if (!parent) {
+    return false;
   }
 
-  const posts = await redisGet(POSTS_KEY);
-  const slugsToDelete = new Set<string>();
-
-  if (Array.isArray(posts)) {
-    for (const post of posts) {
-      if (post && typeof post.slug === "string") {
-        slugsToDelete.add(post.slug);
-      }
-    }
-  }
-
-  // Remove detail caches for known slugs
-  await Promise.all(
-    Array.from(slugsToDelete).map((slug) => redisDel(`${POST_DETAIL_PREFIX}${slug}`)),
-  );
-
-  // Remove page-to-slug mappings for affected pages
-  await Promise.all(
-    pageIds.map((pageId) => redisDel(`${PAGE_SLUG_PREFIX}${pageId}`)),
-  );
-
-  await redisDel(POSTS_KEY);
-  await redisSet(LAST_UPDATED_KEY, new Date().toISOString());
-
-  console.log("Cache invalidated", {
-    pages: pageIds,
-    removedPosts: slugsToDelete.size,
-  });
+  const candidates = [parent.database_id, parent.id];
+  return candidates.some((candidate) => matchesDatabaseId(candidate, databaseId));
 }
 
-async function redisGet(key: string): Promise<any> {
-  const response = await fetch(`${redisUrl}/get/${encodeURIComponent(key)}`, {
-    headers: {
-      Authorization: `Bearer ${redisToken}`,
-    },
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Redis GET failed (${response.status}): ${text}`);
+function extractPageId(eventPayload: any): string | null {
+  if (typeof eventPayload?.data?.id === "string") {
+    return eventPayload.data.id;
   }
-
-  const data = await response.json();
-  const result = data.result ?? null;
-  if (typeof result === "string") {
-    try {
-      return JSON.parse(result);
-    } catch {
-      return result;
-    }
+  if (typeof eventPayload?.id === "string") {
+    return eventPayload.id;
   }
-  return result;
+  if (typeof eventPayload?.data?.parent?.page_id === "string") {
+    return eventPayload.data.parent.page_id;
+  }
+  if (typeof eventPayload?.parent?.page_id === "string") {
+    return eventPayload.parent.page_id;
+  }
+  return null;
 }
 
-async function redisDel(key: string): Promise<void> {
-  const response = await fetch(`${redisUrl}/del/${encodeURIComponent(key)}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${redisToken}`,
-    },
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Redis DEL failed (${response.status}): ${text}`);
+function matchesDatabaseId(candidate: unknown, expected: string): boolean {
+  if (typeof candidate !== "string") {
+    return false;
   }
+  return normalizeId(candidate) === normalizeId(expected);
 }
 
-async function redisSet(key: string, value: string): Promise<void> {
-  const encodedValue = encodeURIComponent(value);
-  const response = await fetch(
-    `${redisUrl}/set/${encodeURIComponent(key)}/${encodedValue}`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${redisToken}`,
-      },
-    },
-  );
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Redis SET failed (${response.status}): ${text}`);
-  }
+function normalizeId(value: string): string {
+  return value.replace(/-/g, "").toLowerCase();
 }
