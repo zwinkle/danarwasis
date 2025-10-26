@@ -61,7 +61,7 @@ web:
 
     - name: Supervisi Digital
       description: Website Supervisi Digital
-      url: htttps://supervisi.danarwasis.my.id
+      url: https://supervisi.danarwasis.my.id
       image: i-solar-diploma-bold-duotone
 
 college:
