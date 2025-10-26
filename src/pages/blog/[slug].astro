@@ -74,12 +74,12 @@ const serializedPost = JSON.stringify(pageData.post).replace(/</g, "\\u003c");
 	description={pageData.post.description}
 	caption={pageData.post.credit ?? undefined}
 	headings={pageData.post.headings as MarkdownHeading[]}>
-	<section set:html={pageData.post.html} />
+	<section data-blog-content set:html={pageData.post.html} />
 	
 	<div class="grid gap-2">
 		<div>
 			<p>Tags:</p>
-			<div class="flex gap-2 flex-wrap">
+			<div class="flex gap-2 flex-wrap" data-blog-tags>
 				{
 					pageData.post.tags.map((tag) => (
 						<a href={`/blog/tags/${tag}`} class="btn-normal decoration-none font-normal px-4">
@@ -135,6 +135,7 @@ const serializedPost = JSON.stringify(pageData.post).replace(/</g, "\\u003c");
 <script type="module" is:inline>
 	const detailScript = document.querySelector("script[data-blog-post-detail]");
 	const slug = detailScript?.dataset.blogSlug ?? "";
+	const originalTitle = document.title;
 	if (!slug || !detailScript) {
 		console.warn("Blog detail auto-refresh: missing slug or data script");
 	} else {
@@ -147,13 +148,9 @@ const serializedPost = JSON.stringify(pageData.post).replace(/</g, "\\u003c");
 		}
 
 		let currentSignature = createSignature(currentPost);
-		let reloadScheduled = false;
 		const REFRESH_INTERVAL = 60_000;
 
 		async function fetchLatestPost() {
-			if (reloadScheduled) {
-				return;
-			}
 			try {
 				const response = await fetch(`/api/blog/${encodeURIComponent(slug)}.json`, {
 					headers: { Accept: "application/json" },
@@ -166,8 +163,9 @@ const serializedPost = JSON.stringify(pageData.post).replace(/</g, "\\u003c");
 				const latestPost = normalizePost(data?.post);
 				const signature = createSignature(latestPost);
 				if (signature && signature !== currentSignature) {
-					reloadScheduled = true;
-					window.location.reload();
+					currentPost = latestPost;
+					currentSignature = signature;
+					renderPost(currentPost);
 				}
 			} catch (error) {
 				const isAbortError =
@@ -196,6 +194,177 @@ const serializedPost = JSON.stringify(pageData.post).replace(/</g, "\\u003c");
 		scheduleRefresh();
 	}
 
+	function renderPost(post) {
+		if (!post) {
+			return;
+		}
+
+		updateTitle(post);
+		updateDate(post);
+		updateContent(post);
+		updateTags(post);
+		updateThumbnail(post);
+		updateHeadings(post);
+		updateDocumentTitle(post);
+	}
+
+	function updateTitle(post) {
+		const titleEl = document.querySelector("[data-blog-title]");
+		if (!titleEl) {
+			return;
+		}
+		titleEl.textContent = post.title || "";
+		titleEl.id = slugify(post.title || "");
+	}
+
+	function updateDate(post) {
+		const dateEl = document.querySelector("[data-blog-date]");
+		if (!dateEl) {
+			return;
+		}
+		if (post.createdAt) {
+			const date = new Date(post.createdAt);
+			if (!Number.isNaN(date.getTime())) {
+				dateEl.textContent = formatPublishedDate(date);
+				dateEl.setAttribute("datetime", date.toISOString());
+				return;
+			}
+		}
+		dateEl.textContent = "";
+		dateEl.removeAttribute("datetime");
+	}
+
+	function updateContent(post) {
+		const section = document.querySelector("[data-blog-content]");
+		if (section) {
+			section.innerHTML = post.html || "";
+		}
+	}
+
+	function updateTags(post) {
+		const tagsContainer = document.querySelector("[data-blog-tags]");
+		if (!tagsContainer) {
+			return;
+		}
+		const tags = Array.isArray(post.tags) ? post.tags : [];
+		tagsContainer.innerHTML = tags
+			.filter((tag) => typeof tag === "string" && tag.trim().length > 0)
+			.map((tag) => {
+				const value = tag.trim();
+				const label = escapeHtml(value);
+				const href = `/blog/tags/${encodeURIComponent(value)}`;
+				return `<a href="${href}" class="btn-normal decoration-none font-normal px-4"><span>${label}</span></a>`;
+			})
+			.join("");
+	}
+
+	function updateThumbnail(post) {
+		const header = document.querySelector("[data-blog-article] .mb-8");
+		let figure = document.querySelector("[data-blog-figure]");
+		let image = document.querySelector("[data-blog-image]");
+		let caption = document.querySelector("[data-blog-caption]");
+		const hasThumbnail = typeof post.thumbnail === "string" && post.thumbnail.length > 0;
+
+		if (hasThumbnail) {
+			if (!figure && header) {
+				header.insertAdjacentHTML(
+					"beforeend",
+					`<figure class="w-full h-fit object-contain" data-blog-figure>
+						<picture>
+							<img data-blog-image src="${escapeAttribute(post.thumbnail)}" alt="Thumbnail for ${escapeAttribute(post.title || "")}" class="rounded-lg mt-8 shimmer aspect-video w-full h-auto" />
+						</picture>
+					</figure>`
+				);
+				figure = document.querySelector("[data-blog-figure]");
+				image = document.querySelector("[data-blog-image]");
+				caption = document.querySelector("[data-blog-caption]");
+			}
+			if (image) {
+				image.setAttribute("src", post.thumbnail);
+				image.setAttribute("alt", `Thumbnail for ${post.title || ""}`);
+			}
+			const credit = typeof post.credit === "string" ? post.credit.trim() : "";
+			if (credit) {
+				if (!caption && figure) {
+					figure.insertAdjacentHTML(
+						"beforeend",
+						`<figcaption data-blog-caption class="text-xs mt-2 text-gray-500 dark:text-gray-400">Gambar: ${escapeHtml(credit)}</figcaption>`
+					);
+					caption = document.querySelector("[data-blog-caption]");
+				}
+				if (caption) {
+					caption.textContent = `Gambar: ${credit}`;
+				}
+			} else if (caption) {
+				caption.remove();
+			}
+		} else if (figure) {
+			figure.remove();
+		}
+	}
+
+	function updateHeadings(post) {
+		const headings = Array.isArray(post.headings) ? post.headings : [];
+		const indicatorContainer = document.querySelector("[data-blog-heading-indicators]");
+		const tocContainer = document.querySelector("[data-blog-toc]");
+		const mobileToc = document.querySelector("[data-blog-toc-mobile]");
+		const titleSlug = slugify(post.title || "");
+		const titleLabel = escapeHtml((post.title || "").trim());
+
+		if (indicatorContainer) {
+			indicatorContainer.innerHTML = headings
+				.filter((item) => item && typeof item.slug === "string")
+				.map((item) => {
+					const slugValue = escapeHtml(item.slug);
+					return `<div data-slug="${slugValue}" class="w-5 h-2 bg-l-on-base dark:bg-d-on-base rounded-sm transition-all duration-500 ease-in-out heading-indicator opacity-10"></div>`;
+				})
+				.join("");
+		}
+
+		const headingLinksDesktop = headings
+			.filter((item) => item && typeof item.slug === "string")
+			.map((item) => {
+				const slugValue = escapeHtml(item.slug);
+				const textValue = escapeHtml((item.text || "").trim());
+				const depth = Number.isFinite(item.depth) ? Number(item.depth) : 0;
+				return `<a href="#${slugValue}" class="text-xs transition-all duration-300 ease-in-out whitespace-pre-wrap px-2 hover:(bg-l-on-base/10 dark:bg-d-on-base/10 opacity-100) opacity-50 transition-all duration-100 ease-in-out rounded-sm py-1" style="margin-left: ${depth}rem;">${textValue}</a>`;
+			})
+			.join("");
+
+		if (tocContainer) {
+			tocContainer.innerHTML = `<a href="#${titleSlug}" class="text-xs transition-all duration-300 ease-in-out whitespace-pre-wrap px-2 hover:(bg-l-on-base/10 dark:bg-d-on-base/10 opacity-100) opacity-50 transition-all duration-100 ease-in-out rounded-sm py-1">${titleLabel}</a>${headingLinksDesktop}`;
+		}
+
+		const headingLinksMobile = headings
+			.filter((item) => item && typeof item.slug === "string")
+			.map((item) => {
+				const slugValue = escapeHtml(item.slug);
+				const textValue = escapeHtml((item.text || "").trim());
+				const depth = Number.isFinite(item.depth) ? Number(item.depth) : 0;
+				return `<a href="#${slugValue}" class="decoration-none" style="margin-left: ${depth}rem;">${textValue}</a>`;
+			})
+			.join("");
+
+		if (mobileToc) {
+			mobileToc.innerHTML = `<a href="#${titleSlug}" class="decoration-none">${titleLabel}</a>${headingLinksMobile}`;
+		}
+
+		window.dispatchEvent(new Event("blog:headings-updated"));
+	}
+
+	function updateDocumentTitle(post) {
+		if (!post || !post.title) {
+			return;
+		}
+		if (originalTitle && originalTitle.includes("|") && !document.title.includes(post.title)) {
+			const parts = originalTitle.split("|");
+			const suffix = parts.length > 1 ? parts.slice(1).join("|").trim() : "";
+			document.title = suffix ? `${post.title} | ${suffix}` : post.title;
+		} else {
+			document.title = post.title;
+		}
+	}
+
 	function normalizePost(raw) {
 		if (!raw || typeof raw !== "object") {
 			return null;
@@ -205,6 +374,10 @@ const serializedPost = JSON.stringify(pageData.post).replace(/</g, "\\u003c");
 			slug: typeof raw.slug === "string" ? raw.slug : "",
 			title: typeof raw.title === "string" ? raw.title : "",
 			html: typeof raw.html === "string" ? raw.html : "",
+			thumbnail: typeof raw.thumbnail === "string" ? raw.thumbnail : "",
+			credit: typeof raw.credit === "string" ? raw.credit : "",
+			tags: Array.isArray(raw.tags) ? raw.tags : [],
+			headings: Array.isArray(raw.headings) ? raw.headings : [],
 			createdAt: typeof raw.createdAt === "string" ? raw.createdAt : null,
 			updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : null,
 		};
@@ -220,6 +393,41 @@ const serializedPost = JSON.stringify(pageData.post).replace(/</g, "\\u003c");
 			title: post.title,
 			updatedAt: post.updatedAt,
 			html: post.html,
+			thumbnail: post.thumbnail,
+			credit: post.credit,
+			tags: Array.isArray(post.tags) ? post.tags : [],
+			headings: Array.isArray(post.headings)
+				? post.headings.map((item) => ({
+					depth: item?.depth,
+					slug: item?.slug,
+					text: item?.text,
+				}))
+				: [],
 		});
+	}
+
+	function formatPublishedDate(date) {
+		return date.toLocaleDateString("en-us", {
+			year: "numeric",
+			month: "short",
+			day: "numeric",
+		});
+	}
+
+	function slugify(value) {
+		return (value || "").replace(/\s+/g, "-").toLowerCase();
+	}
+
+	function escapeHtml(value) {
+		return String(value)
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;")
+			.replace(/'/g, "&#39;");
+	}
+
+	function escapeAttribute(value) {
+		return escapeHtml(value).replace(/`/g, "&#96;");
 	}
 </script>
