@@ -59,6 +59,11 @@ web:
       url: https://github.com/zwinkle/muhiplus
       image: i-solar-code-circle-bold-duotone
 
+    - name: Supervisi Digital
+      description: Website Supervisi Digital
+      url: htttps://supervisi.danarwasis.my.id
+      image: i-solar-diploma-bold-duotone
+
 college:
     - name: Tugas Kuliah
       description: Rekap Tugas Kuliah
